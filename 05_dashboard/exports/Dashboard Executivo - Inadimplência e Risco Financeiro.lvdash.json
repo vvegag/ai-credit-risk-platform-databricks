@@ -1,0 +1,954 @@
+{
+  "datasets": [
+    {
+      "name": "ds_clientes_criticos",
+      "displayName": "Clientes Críticos",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(DISTINCT codigo_cliente) as total_criticos\n",
+        "FROM\n",
+        "  workspace.risco_gold.predicoes_inadimplencia\n",
+        "WHERE\n",
+        "  classe_risco = 'Crítico'"
+      ]
+    },
+    {
+      "name": "ds_performance_modelo",
+      "displayName": "Performance do Modelo",
+      "queryLines": [
+        "SELECT\n",
+        "  classe_risco,\n",
+        "  COUNT(*) as total_predicoes\n",
+        "FROM\n",
+        "  workspace.risco_gold.predicoes_inadimplencia\n",
+        "GROUP BY\n",
+        "  classe_risco\n",
+        "ORDER BY\n",
+        "  CASE classe_risco\n",
+        "    WHEN 'Baixo' THEN 1\n",
+        "    WHEN 'Médio' THEN 2\n",
+        "    WHEN 'Alto' THEN 3\n",
+        "    WHEN 'Crítico' THEN 4\n",
+        "  END"
+      ]
+    },
+    {
+      "name": "ds_trend_inadimplencia",
+      "displayName": "Trend Inadimplência Mensal",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('month', data_vencimento) as mes,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN status_enriquecido = 'Inadimplente' THEN 1\n",
+        "      ELSE 0\n",
+        "    END\n",
+        "  )\n",
+        "    * 100.0\n",
+        "    / COUNT(*) as taxa_inadimplencia_pct\n",
+        "FROM\n",
+        "  workspace.risco_silver.faturas_enriquecidas\n",
+        "WHERE\n",
+        "  data_vencimento >= :data_inicio\n",
+        "  AND data_vencimento <= :data_fim\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('month', data_vencimento)\n",
+        "ORDER BY\n",
+        "  mes"
+      ],
+      "parameters": [
+        {
+          "displayName": "Data Início",
+          "keyword": "data_inicio",
+          "dataType": "DATE",
+          "defaultSelection": {
+            "values": {
+              "dataType": "DATE",
+              "values": [
+                {
+                  "value": "2025-01-01"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "displayName": "Data Fim",
+          "keyword": "data_fim",
+          "dataType": "DATE",
+          "defaultSelection": {
+            "values": {
+              "dataType": "DATE",
+              "values": [
+                {
+                  "value": "2026-12-31"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_taxa_inadimplencia",
+      "displayName": "Taxa de Inadimplência",
+      "queryLines": [
+        "SELECT\n",
+        "  AVG(prob_inadimplente) * 100 as taxa_inadimplencia_pct\n",
+        "FROM\n",
+        "  workspace.risco_gold.predicoes_inadimplencia"
+      ]
+    },
+    {
+      "name": "ds_valor_risco",
+      "displayName": "Valor Total em Risco",
+      "queryLines": [
+        "SELECT\n",
+        "  SUM(total_em_aberto) as valor_total_risco\n",
+        "FROM\n",
+        "  workspace.risco_gold.predicoes_inadimplencia\n",
+        "WHERE\n",
+        "  classe_risco = 'Crítico'"
+      ]
+    },
+    {
+      "name": "ds_distribuicao_risco",
+      "displayName": "Distribuição por Risco",
+      "queryLines": [
+        "SELECT\n",
+        "  classe_risco,\n",
+        "  COUNT(DISTINCT codigo_cliente) as total_clientes\n",
+        "FROM\n",
+        "  workspace.risco_gold.predicoes_inadimplencia\n",
+        "GROUP BY\n",
+        "  classe_risco\n",
+        "ORDER BY\n",
+        "  CASE classe_risco\n",
+        "    WHEN 'Baixo' THEN 1\n",
+        "    WHEN 'Médio' THEN 2\n",
+        "    WHEN 'Alto' THEN 3\n",
+        "    WHEN 'Crítico' THEN 4\n",
+        "  END"
+      ]
+    },
+    {
+      "name": "ds_cashflow_evolucao",
+      "displayName": "Evolução Cashflow",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('month', data_vencimento) as data,\n",
+        "  SUM(valor_titulo) as valor_previsto\n",
+        "FROM\n",
+        "  workspace.risco_silver.faturas_enriquecidas\n",
+        "WHERE\n",
+        "  data_vencimento IS NOT NULL\n",
+        "  AND data_vencimento >= :data_inicio\n",
+        "  AND data_vencimento <= :data_fim\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('month', data_vencimento)\n",
+        "ORDER BY\n",
+        "  data"
+      ],
+      "parameters": [
+        {
+          "displayName": "Data Início",
+          "keyword": "data_inicio",
+          "dataType": "DATE",
+          "defaultSelection": {
+            "values": {
+              "dataType": "DATE",
+              "values": [
+                {
+                  "value": "2025-01-01"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "displayName": "Data Fim",
+          "keyword": "data_fim",
+          "dataType": "DATE",
+          "defaultSelection": {
+            "values": {
+              "dataType": "DATE",
+              "values": [
+                {
+                  "value": "2026-12-31"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_top10_risco",
+      "displayName": "Top 10 Clientes de Risco",
+      "queryLines": [
+        "SELECT\n",
+        "  p.codigo_cliente,\n",
+        "  p.nome_cliente as razao_social,\n",
+        "  p.prob_inadimplente as probabilidade_inadimplencia,\n",
+        "  p.classe_risco as categoria_risco,\n",
+        "  p.total_em_aberto as valor_em_aberto\n",
+        "FROM\n",
+        "  workspace.risco_gold.predicoes_inadimplencia p\n",
+        "ORDER BY\n",
+        "  p.prob_inadimplente DESC\n",
+        "LIMIT 10"
+      ]
+    },
+    {
+      "name": "ds_validacao_notas",
+      "displayName": "Validação de Notas",
+      "queryLines": [
+        "SELECT\n",
+        "  CASE\n",
+        "    WHEN status_enriquecido = 'Pago' THEN 'Aprovado'\n",
+        "    WHEN status_enriquecido = 'Pendente' THEN 'Pendente'\n",
+        "    ELSE 'Rejeitado'\n",
+        "  END as status_validacao,\n",
+        "  COUNT(*) as total_notas\n",
+        "FROM\n",
+        "  workspace.risco_silver.faturas_enriquecidas\n",
+        "WHERE\n",
+        "  data_vencimento >= :data_inicio\n",
+        "  AND data_vencimento <= :data_fim\n",
+        "GROUP BY\n",
+        "  status_validacao"
+      ],
+      "parameters": [
+        {
+          "displayName": "Data Início",
+          "keyword": "data_inicio",
+          "dataType": "DATE",
+          "defaultSelection": {
+            "values": {
+              "dataType": "DATE",
+              "values": [
+                {
+                  "value": "2025-01-01"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "displayName": "Data Fim",
+          "keyword": "data_fim",
+          "dataType": "DATE",
+          "defaultSelection": {
+            "values": {
+              "dataType": "DATE",
+              "values": [
+                {
+                  "value": "2026-12-31"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_receita_prevista",
+      "displayName": "Receita Prevista 30 Dias",
+      "queryLines": [
+        "SELECT\n",
+        "  SUM(total_em_aberto) * 0.85 as receita_prevista_30d\n",
+        "FROM\n",
+        "  workspace.risco_gold.predicoes_inadimplencia\n",
+        "WHERE\n",
+        "  classe_risco IN ('Baixo', 'Médio')"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "99c1cbe6",
+      "displayName": "Page 1",
+      "layout": [
+        {
+          "widget": {
+            "name": "w_validacao_notas",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_validacao_notas",
+                  "fields": [
+                    {
+                      "name": "total_notas",
+                      "expression": "`total_notas`"
+                    },
+                    {
+                      "name": "status_validacao",
+                      "expression": "`status_validacao`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Status de Validação",
+                "showTitle": true
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "total_notas",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "status_validacao",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 4,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "w_top10_risco",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top10_risco",
+                  "fields": [
+                    {
+                      "name": "codigo_cliente",
+                      "expression": "`codigo_cliente`"
+                    },
+                    {
+                      "name": "razao_social",
+                      "expression": "`razao_social`"
+                    },
+                    {
+                      "name": "probabilidade_inadimplencia",
+                      "expression": "`probabilidade_inadimplencia`"
+                    },
+                    {
+                      "name": "categoria_risco",
+                      "expression": "`categoria_risco`"
+                    },
+                    {
+                      "name": "valor_em_aberto",
+                      "expression": "`valor_em_aberto`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Top 10 Clientes Risco",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "codigo_cliente",
+                    "displayName": "Cliente"
+                  },
+                  {
+                    "fieldName": "razao_social",
+                    "displayName": "Razão Social"
+                  },
+                  {
+                    "fieldName": "probabilidade_inadimplencia",
+                    "format": {
+                      "type": "number-percent",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Prob."
+                  },
+                  {
+                    "fieldName": "categoria_risco",
+                    "displayName": "Risco"
+                  },
+                  {
+                    "fieldName": "valor_em_aberto",
+                    "format": {
+                      "type": "number-currency",
+                      "abbreviation": "compact",
+                      "currencyCode": "BRL",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Valor"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 6,
+            "width": 8,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "w_performance_modelo",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_performance_modelo",
+                  "fields": [
+                    {
+                      "name": "classe_risco",
+                      "expression": "`classe_risco`"
+                    },
+                    {
+                      "name": "total_predicoes",
+                      "expression": "`total_predicoes`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Performance Modelo",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "classe_risco",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "total_predicoes",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "w_trend_inadimplencia",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_trend_inadimplencia",
+                  "fields": [
+                    {
+                      "name": "mes",
+                      "expression": "`mes`"
+                    },
+                    {
+                      "name": "taxa_inadimplencia_pct",
+                      "expression": "`taxa_inadimplencia_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Trend Inadimplência",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "mes",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "taxa_inadimplencia_pct",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  },
+                  "formatTemplate": "{{ @formatted }}%",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 10,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "w_counter_criticos",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_clientes_criticos",
+                  "fields": [
+                    {
+                      "name": "total_criticos",
+                      "expression": "`total_criticos`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Clientes CRÍTICO",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_criticos"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "w_counter_taxa",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_taxa_inadimplencia",
+                  "fields": [
+                    {
+                      "name": "taxa_inadimplencia_pct",
+                      "expression": "`taxa_inadimplencia_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Taxa Inadimplência",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "taxa_inadimplencia_pct",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 2
+                    }
+                  },
+                  "formatTemplate": "{{ @formatted }}%"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "w_counter_valor",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_valor_risco",
+                  "fields": [
+                    {
+                      "name": "valor_total_risco",
+                      "expression": "`valor_total_risco`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Valor em Risco",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "valor_total_risco",
+                  "format": {
+                    "type": "number-currency",
+                    "abbreviation": "compact",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "w_counter_receita",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_receita_prevista",
+                  "fields": [
+                    {
+                      "name": "receita_prevista_30d",
+                      "expression": "`receita_prevista_30d`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Receita 30d",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "receita_prevista_30d",
+                  "format": {
+                    "type": "number-currency",
+                    "abbreviation": "compact",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "w_chart_distribuicao",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_distribuicao_risco",
+                  "fields": [
+                    {
+                      "name": "total_clientes",
+                      "expression": "`total_clientes`"
+                    },
+                    {
+                      "name": "classe_risco",
+                      "expression": "`classe_risco`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Distribuição Risco",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "total_clientes",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "classe_risco",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "w_chart_cashflow",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cashflow_evolucao",
+                  "fields": [
+                    {
+                      "name": "data",
+                      "expression": "`data`"
+                    },
+                    {
+                      "name": "valor_previsto",
+                      "expression": "`valor_previsto`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cashflow Previsto",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "data",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "valor_previsto",
+                  "format": {
+                    "type": "number-currency",
+                    "abbreviation": "compact",
+                    "currencyCode": "BRL",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    }
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 4
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "global_filters",
+      "displayName": "Global Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "w_filtro_periodo",
+            "queries": [
+              {
+                "name": "parameter_dashboards/01f17618145a117eb264f8f3c4756096/datasets/01f1761afc3c119fb41d01711a9523a3_data_inicio",
+                "query": {
+                  "datasetName": "ds_trend_inadimplencia",
+                  "parameters": [
+                    {
+                      "name": "data_inicio",
+                      "keyword": "data_inicio"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f17618145a117eb264f8f3c4756096/datasets/01f1761afc3c119fb41d01711a9523a3_data_fim",
+                "query": {
+                  "datasetName": "ds_trend_inadimplencia",
+                  "parameters": [
+                    {
+                      "name": "data_fim",
+                      "keyword": "data_fim"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "title": "Período de Análise",
+                "showTitle": true
+              },
+              "version": 2,
+              "selection": {
+                "defaultSelection": {
+                  "range": {
+                    "dataType": "DATE",
+                    "min": {
+                      "value": "2025-01-01"
+                    },
+                    "max": {
+                      "value": "2026-12-31"
+                    }
+                  }
+                }
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "data_inicio",
+                    "queryName": "parameter_dashboards/01f17618145a117eb264f8f3c4756096/datasets/01f1761afc3c119fb41d01711a9523a3_data_inicio"
+                  },
+                  {
+                    "parameterName": "data_fim",
+                    "queryName": "parameter_dashboards/01f17618145a117eb264f8f3c4756096/datasets/01f1761afc3c119fb41d01711a9523a3_data_fim"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "visualizationColors": [
+        "#10B981",
+        "#F59E0B",
+        "#F97316",
+        "#EF4444",
+        "#3B82F6",
+        "#8B5CF6",
+        "#EC4899",
+        "#14B8A6"
+      ],
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
