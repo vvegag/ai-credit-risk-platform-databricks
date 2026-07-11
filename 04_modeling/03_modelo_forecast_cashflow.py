@@ -45,8 +45,10 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-# Config MLflow
-mlflow.set_experiment("/Users/valdomirovega@hotmail.com/risco_financeiro_experiments")
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
+
+mlflow.set_experiment(f"/Shared/{CATALOG}_forecast_cashflow")
 
 print("✅ Bibliotecas carregadas")
 print(f"📦 MLflow version: {mlflow.__version__}")
@@ -54,15 +56,15 @@ print(f"📦 MLflow version: {mlflow.__version__}")
 # COMMAND ----------
 
 # DBTITLE 1,2️⃣ Criar Série Temporal de Cash Flow
-# Agregar faturas por data de vencimento
-df_cashflow = spark.sql("""
-  SELECT 
+# Agregação por data feita em Spark (só o resultado, 1 linha por data, vai para pandas/Prophet)
+df_cashflow = spark.sql(f"""
+  SELECT
     data_vencimento as data,
     SUM(valor_total) as receita_esperada,
     SUM(CASE WHEN dias_atraso <= 0 THEN valor_total ELSE 0 END) as receita_recebida,
     SUM(CASE WHEN dias_atraso > 0 THEN valor_em_aberto ELSE 0 END) as perda_inadimplencia,
     COUNT(*) as num_faturas
-  FROM workspace.risco_silver.faturas_enriquecidas
+  FROM {CATALOG}.silver.faturas_enriquecidas
   GROUP BY data_vencimento
   ORDER BY data_vencimento
 """).toPandas()
@@ -189,11 +191,11 @@ df_forecast_save['janela'] = pd.cut(
     labels=['0-30 dias', '31-60 dias', '61-90 dias']
 )
 
-# Converter para Spark e salvar
+# Converter para Spark e salvar (tabela pequena: 90 linhas, 1 por dia)
 spark_df_forecast = spark.createDataFrame(df_forecast_save)
-spark_df_forecast.write.mode("overwrite").saveAsTable("workspace.risco_gold.forecast_cashflow")
+spark_df_forecast.write.mode("overwrite").saveAsTable(f"{CATALOG}.gold.forecast_cashflow")
 
-print("✅ Tabela salva: workspace.risco_gold.forecast_cashflow")
+print(f"✅ Tabela salva: {CATALOG}.gold.forecast_cashflow")
 print(f"\n📊 Forecast por Janela de Tempo:")
 print(df_forecast_save.groupby('janela')['cashflow_previsto'].sum())
 print(f"\n⚠️ Dias com Risco Crítico (cashflow negativo):")
@@ -230,7 +232,7 @@ else:
     print("  ✅ Nenhum alerta crítico")
 
 print("\n💾 DADOS SALVOS:")
-print("  ✅ workspace.risco_gold.forecast_cashflow")
+print(f"  ✅ {CATALOG}.gold.forecast_cashflow")
 
 print("\n" + "="*70)
 

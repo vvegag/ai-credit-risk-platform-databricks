@@ -32,17 +32,26 @@ from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
 
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
+
 print("✅ Bibliotecas carregadas")
 print(f"🕒 Data/Hora da análise: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 # COMMAND ----------
 
 # DBTITLE 1,2️⃣ Carregar Dados de Baseline (Treino)
-# Carregar dados do feature store usados no TREINO (baseline)
-df_baseline = spark.table("workspace.risco_ml_features.features_clientes").toPandas()
+# Carregar a feature store usada no TREINO (baseline) — tabela pequena (1 linha/cliente),
+# cache() porque é reaproveitada nas comparações abaixo.
+df_baseline_spark = spark.table(f"{CATALOG}.gold.features_ml").cache()
+df_baseline = df_baseline_spark.toPandas()
+df_baseline_spark.unpersist()
 
-# Remover target e ID
-feature_cols = [col for col in df_baseline.columns if col not in ['cliente_id', 'inadimplente']]
+# Apenas colunas numéricas, removendo identificadores/categóricas
+cols_to_exclude = ['id_cliente', 'cnpj', 'nome', 'categoria_rfm', 'perfil_comportamental']
+feature_cols = [
+    c for c in df_baseline.select_dtypes(include=[np.number]).columns if c not in cols_to_exclude
+]
 baseline_features = df_baseline[feature_cols].copy()
 
 print(f"✅ Baseline carregado: {baseline_features.shape}")
@@ -68,8 +77,8 @@ current_features = baseline_features.copy()
 drift_mask = np.random.random(len(current_features)) < 0.1
 
 # Adicionar drift em features específicas
-if 'media_atraso_dias' in current_features.columns:
-    current_features.loc[drift_mask, 'media_atraso_dias'] *= 1.5  # Aumento de 50%
+if 'recency_dias' in current_features.columns:
+    current_features.loc[drift_mask, 'recency_dias'] *= 1.5  # Aumento de 50%
 
 if 'taxa_inadimplencia' in current_features.columns:
     current_features.loc[drift_mask, 'taxa_inadimplencia'] *= 1.3  # Aumento de 30%
@@ -133,10 +142,9 @@ print("="*80)
 # COMMAND ----------
 
 # DBTITLE 1,5️⃣ Monitorar Performance do Modelo
-# Carregar predições do modelo
-df_predictions = spark.table("workspace.risco_gold.predicoes_inadimplencia").toPandas()
+# Carregar predições do modelo (tabela pequena, 1 linha/cliente — gerada por 04_modeling/01_modelo_classificacao_risco)
+df_predictions = spark.table(f"{CATALOG}.gold.model_predictions").toPandas()
 
-# Calcular métricas de distribuição das predições
 print("\n" + "="*80)
 print("🎯 MONITORING DE PREDIÇÕES")
 print("="*80)
@@ -146,14 +154,14 @@ print(f"  Média: {df_predictions['probabilidade_inadimplencia'].mean():.4f}")
 print(f"  Mediana: {df_predictions['probabilidade_inadimplencia'].median():.4f}")
 print(f"  Desvio Padrão: {df_predictions['probabilidade_inadimplencia'].std():.4f}")
 
-print("\n📊 Distribuição de Classes:")
-print(df_predictions['categoria_risco'].value_counts().sort_index())
+print("\n📊 Distribuição de Perfis:")
+print(df_predictions['perfil_comportamental'].value_counts())
 
 print("\n📊 Distribuição de Predições (0=Adimplente, 1=Inadimplente):")
-print(df_predictions['predicao'].value_counts())
+print(df_predictions['predicao_inadimplente'].value_counts())
 
 # Alertas
-risco_critico_pct = (df_predictions['categoria_risco'] == 'Crítico').sum() / len(df_predictions) * 100
+risco_critico_pct = (df_predictions['perfil_comportamental'] == 'Alto Risco').sum() / len(df_predictions) * 100
 
 print(f"\n⚠️ ALERTAS:")
 if risco_critico_pct > 30:
@@ -172,12 +180,12 @@ print("🏭 HEALTH CHECK DO SISTEMA")
 print("="*80)
 
 tabelas_monitoradas = [
-    'workspace.risco_bronze.marcas_raw',
-    'workspace.risco_bronze.clientes_raw',
-    'workspace.risco_bronze.faturas_raw',
-    'workspace.risco_silver.faturas_enriquecidas',
-    'workspace.risco_gold.predicoes_inadimplencia',
-    'workspace.risco_ml_features.features_clientes'
+    f'{CATALOG}.bronze.clientes',
+    f'{CATALOG}.bronze.faturas',
+    f'{CATALOG}.bronze.pagamentos',
+    f'{CATALOG}.silver.faturas_enriquecidas',
+    f'{CATALOG}.gold.features_ml',
+    f'{CATALOG}.gold.model_predictions',
 ]
 
 health_status = []
@@ -226,17 +234,12 @@ monitoring_record = {
 
 df_monitoring = pd.DataFrame([monitoring_record])
 
-# Salvar
-try:
-    spark_df_monitoring = spark.createDataFrame(df_monitoring)
-    spark_df_monitoring.write.mode("append").saveAsTable("workspace.risco_gold.monitoring_logs")
-    print("✅ Métricas salvas: workspace.risco_gold.monitoring_logs")
-except Exception as e:
-    print(f"⚠️ Erro ao salvar métricas: {e}")
-    # Primeira vez, criar tabela
-    spark_df_monitoring = spark.createDataFrame(df_monitoring)
-    spark_df_monitoring.write.mode("overwrite").saveAsTable("workspace.risco_gold.monitoring_logs")
-    print("✅ Tabela criada: workspace.risco_gold.monitoring_logs")
+# Salvar (append incremental; overwrite só na primeira execução, quando a tabela ainda não existe)
+spark_df_monitoring = spark.createDataFrame(df_monitoring)
+table_exists = spark.catalog.tableExists(f"{CATALOG}.gold.monitoring_logs")
+spark_df_monitoring.write.mode("append" if table_exists else "overwrite") \
+    .saveAsTable(f"{CATALOG}.gold.monitoring_logs")
+print(f"✅ Métricas salvas: {CATALOG}.gold.monitoring_logs")
 
 print("\n📊 Último registro de monitoring:")
 print(df_monitoring.T)

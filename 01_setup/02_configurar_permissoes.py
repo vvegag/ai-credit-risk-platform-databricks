@@ -5,10 +5,10 @@
 # MAGIC **Objetivo**: Configurar permissões adequadas para schemas do projeto
 # MAGIC 
 # MAGIC **Schemas**:
-# MAGIC - `workspace.risco_bronze` - Dados brutos
-# MAGIC - `workspace.risco_silver` - Dados transformados
-# MAGIC - `workspace.risco_gold` - Features para ML
-# MAGIC 
+# MAGIC - `credit_risk.bronze` - Dados brutos
+# MAGIC - `credit_risk.silver` - Dados transformados
+# MAGIC - `credit_risk.gold` - Features para ML
+# MAGIC
 # MAGIC **Permissões**:
 # MAGIC - Data Engineers: CREATE, SELECT, MODIFY
 # MAGIC - Data Scientists: SELECT (todos), CREATE/MODIFY (gold apenas)
@@ -16,9 +16,8 @@
 
 # COMMAND ----------
 
-from pyspark.sql import SparkSession
-
-spark = SparkSession.builder.getOrCreate()
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
 
 # COMMAND ----------
 
@@ -27,14 +26,14 @@ spark = SparkSession.builder.getOrCreate()
 
 print("🔍 Validando schemas...\n")
 
-schemas = ['risco_bronze', 'risco_silver', 'risco_gold']
+schemas = ['bronze', 'silver', 'gold']
 
 for schema in schemas:
     try:
-        spark.sql(f"DESCRIBE SCHEMA workspace.{schema}")
-        print(f"✅ workspace.{schema} existe")
+        spark.sql(f"DESCRIBE SCHEMA {CATALOG}.{schema}")
+        print(f"✅ {CATALOG}.{schema} existe")
     except Exception as e:
-        print(f"❌ workspace.{schema} NÃO existe - Rode 01_criar_catalogo_schemas.py primeiro")
+        print(f"❌ {CATALOG}.{schema} NÃO existe - Rode 01_criar_catalogo_schemas.py primeiro")
         print(f"   Erro: {str(e)[:100]}")
 
 # COMMAND ----------
@@ -56,23 +55,23 @@ try:
     for schema in schemas:
         # GRANT CREATE TABLE
         spark.sql(f"""
-            GRANT CREATE TABLE ON SCHEMA workspace.{schema} 
+            GRANT CREATE TABLE ON SCHEMA {CATALOG}.{schema}
             TO `{data_engineer_group}`
         """)
-        
+
         # GRANT SELECT
         spark.sql(f"""
-            GRANT SELECT ON SCHEMA workspace.{schema} 
+            GRANT SELECT ON SCHEMA {CATALOG}.{schema}
             TO `{data_engineer_group}`
         """)
-        
+
         # GRANT MODIFY
         spark.sql(f"""
-            GRANT MODIFY ON SCHEMA workspace.{schema} 
+            GRANT MODIFY ON SCHEMA {CATALOG}.{schema}
             TO `{data_engineer_group}`
         """)
-        
-        print(f"✅ Permissões configuradas para workspace.{schema}")
+
+        print(f"✅ Permissões configuradas para {CATALOG}.{schema}")
         
 except Exception as e:
     print(f"⚠️  Aviso: {str(e)[:200]}")
@@ -94,19 +93,19 @@ data_scientist_group = "data_scientists"
 
 try:
     # SELECT em Bronze e Silver
-    for schema in ['risco_bronze', 'risco_silver']:
+    for schema in ['bronze', 'silver']:
         spark.sql(f"""
-            GRANT SELECT ON SCHEMA workspace.{schema} 
+            GRANT SELECT ON SCHEMA {CATALOG}.{schema}
             TO `{data_scientist_group}`
         """)
-        print(f"✅ SELECT granted em workspace.{schema}")
-    
+        print(f"✅ SELECT granted em {CATALOG}.{schema}")
+
     # Permissões completas em Gold
     spark.sql(f"""
-        GRANT CREATE TABLE, SELECT, MODIFY ON SCHEMA workspace.risco_gold 
+        GRANT CREATE TABLE, SELECT, MODIFY ON SCHEMA {CATALOG}.gold
         TO `{data_scientist_group}`
     """)
-    print(f"✅ Permissões completas em workspace.risco_gold")
+    print(f"✅ Permissões completas em {CATALOG}.gold")
     
 except Exception as e:
     print(f"⚠️  Aviso: {str(e)[:200]}")
@@ -126,10 +125,10 @@ business_user_group = "business_users"
 
 try:
     spark.sql(f"""
-        GRANT SELECT ON SCHEMA workspace.risco_gold 
+        GRANT SELECT ON SCHEMA {CATALOG}.gold
         TO `{business_user_group}`
     """)
-    print(f"✅ SELECT granted em workspace.risco_gold")
+    print(f"✅ SELECT granted em {CATALOG}.gold")
     
 except Exception as e:
     print(f"⚠️  Aviso: {str(e)[:200]}")
@@ -143,9 +142,9 @@ except Exception as e:
 print("🔍 Verificando permissões configuradas...\n")
 
 for schema in schemas:
-    print(f"\n📂 workspace.{schema}:")
+    print(f"\n📂 {CATALOG}.{schema}:")
     try:
-        grants = spark.sql(f"SHOW GRANTS ON SCHEMA workspace.{schema}")
+        grants = spark.sql(f"SHOW GRANTS ON SCHEMA {CATALOG}.{schema}")
         grants.show(truncate=False)
     except Exception as e:
         print(f"   ⚠️  Não foi possível listar grants: {str(e)[:100]}")

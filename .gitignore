@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Databricks
+.databricks/
+.databricks-connect
+*.dbc
+
+# Ambiente / segredos
+.env
+.env.*
+*.pem
+
+# Sistema operacional / editores
+.DS_Store
+.vscode/
+.idea/
+
+# Artefatos gerados localmente (não versionar binários grandes)
+# 02_ingestion/sample_data/notas_fiscais/*.pdf
+/tmp/
+
+# Material pessoal de estudo para entrevista (não faz parte do portfólio público)
+09_docs/TALKING_POINTS.md
+09_docs/TALKING_POINTS_EN.md

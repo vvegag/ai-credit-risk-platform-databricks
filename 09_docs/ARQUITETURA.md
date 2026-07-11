@@ -1,244 +1,121 @@
-# 🏗️ Arquitetura do Projeto - Inadimplência e Risco Financeiro
+# 🏗️ Architecture — AI Credit Risk Platform
 
-## 📐 Visão Geral
+## 📐 Overview
 
-Sistema end-to-end de Machine Learning para previsão de inadimplência, construído em Databricks com arquitetura Medallion e MLOps completo.
+End-to-end Machine Learning system for delinquency prediction and cashflow forecasting, built on
+Databricks with a Medallion architecture and a PySpark-native pipeline.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     FONTES DE DADOS                             │
-├─────────────────────────────────────────────────────────────────┤
-│  Fivetran (ERP Simulado)    │  CSVs Manuais (Financeiro)       │
-│  - Clientes                 │  - Ajustes                        │
-│  - Faturas                  │  - Renegociações                  │
-│  - Marcas                   │  - Correções Manuais              │
-└───────────┬─────────────────┴───────────────┬───────────────────┘
-            │                                 │
-            ▼                                 ▼
+│                       DATA SOURCES                              │
+│  Synthetic generator (02_ingestion/01_)  │  Manual CSVs (02_)   │
+└───────────┬───────────────────────────────┴───────────┬─────────┘
+            ▼                                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                 🥉 BRONZE (Raw Data)                            │
-│  workspace.risco_bronze.*                                       │
-│  - marcas_raw, clientes_raw, faturas_raw                        │
-│  - Dados brutos, sem transformação                              │
-└───────────┬─────────────────────────────────────────────────────┘
-            │
-            │ PySpark Transformations
-            │
+│  🥉 BRONZE — credit_risk.bronze.*                                │
+│  clientes, faturas (partitioned by ano_mes_emissao), pagamentos  │
+│  Raw data, no transformation                                     │
+└───────────┬───────────────────────────────────────────────────────┘
+            │ PySpark DataFrame API (03_feature_engineering/01_)
             ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                 🥈 SILVER (Clean & Enriched)                    │
-│  workspace.risco_silver.*                                       │
-│  - faturas_enriquecidas (26 colunas)                            │
-│  - Joins, cálculo de dias_atraso, classificação de risco        │
-│  - Métricas agregadas por cliente                               │
-└───────────┬─────────────────────────────────────────────────────┘
-            │
-            │ Feature Engineering
-            │
+│  🥈 SILVER — credit_risk.silver.*                                 │
+│  clientes, faturas_enriquecidas (joins with payments, dias_atraso,│
+│  valor_em_aberto, pago_flag)                                      │
+└───────────┬───────────────────────────────────────────────────────┘
+            │ Feature engineering (03_feature_engineering/02_–04_)
             ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                 🥇 GOLD (Analytics-Ready)                       │
-│  workspace.risco_gold.*                                         │
-│  - predicoes_inadimplencia                                      │
-│  - Dados prontos para dashboards e consumo                      │
+│  🥇 GOLD — credit_risk.gold.*                                     │
+│  features_agregadas → features_rfm → features_ml (final ML table) │
+│  model_predictions, model_metrics, model_alerts, model_versions,  │
+│  forecast_cashflow, previsao_valor_inadimplente,                  │
+│  validacao_notas_fiscais, monitoring_logs                         │
 └─────────────────────────────────────────────────────────────────┘
-            │
-            │ Parallel Processing
-            │
-      ┌─────┴─────┐
-      │           │
-      ▼           ▼
-┌──────────┐  ┌──────────────────┐
-│ Features │  │   ML Models      │
-│  Store   │  │   & Training     │
-│          │  │                  │
-│ RFM      │  │  MLflow          │
-│ Temporal │  │  Experiments     │
-│ Behavior │  │  RandomForest    │
-│          │  │  XGBoost         │
-└──────────┘  └────────┬─────────┘
-                       │
-                       │ Model Registry
-                       │
-                       ▼
-              ┌─────────────────┐
-              │  Unity Catalog  │
-              │  Model Registry │
-              │                 │
-              │  Champion/      │
-              │  Challenger     │
-              └────────┬────────┘
-                       │
-                       │ Deploy
-                       │
-                       ▼
-              ┌─────────────────┐
-              │  Model Serving  │
-              │  (REST API)     │
-              │                 │
-              │  Batch          │
-              │  Inference      │
-              └─────────────────┘
 ```
 
 ---
 
-## 🧱 Componentes
+## 🧱 Components
 
-### 1. Data Ingestion Layer
+### 1. Data Ingestion (`02_ingestion/`)
+Synthetic Bronze data generation and a CSV Auto Loader path — both PySpark-native (`spark.createDataFrame`,
+`readStream`/`writeStream`), no `toPandas()` round-trips.
 
-**Tecnologia**: Auto Loader (simulado com batch)
-**Cadência**: Diária
-**Volume**: ~500 novas faturas/dia
+### 2. Silver Transformation (`03_feature_engineering/01_transformacao_silver.py`)
+Cleans and types Bronze data, joins `faturas` with `pagamentos`, and derives `valor_em_aberto` /
+`pago_flag`. 100% PySpark DataFrame API.
 
-```python
-# Bronze ingestion
-spark.createDataFrame(df_raw) \
-    .write.mode("append") \
-    .saveAsTable("workspace.risco_bronze.faturas_raw")
-```
+### 3. Gold / Feature Store (`03_feature_engineering/02_`–`04_`)
+- **02_transformacao_gold**: temporal aggregates (90/180/365d), payment/delinquency rates
+- **03_feature_store_rfm**: Recency/Frequency/Monetary scoring
+- **04_clustering_features_ml**: `VectorAssembler` → `StandardScaler` → `KMeans(k=4)` behavioral profiles
 
-### 2. Data Transformation Layer
+`credit_risk.gold.features_ml` is the single feature table consumed by every model in `04_modeling/`.
 
-**Tecnologia**: PySpark SQL + DataFrames
-**Cadência**: Após ingestão (triggered)
-**Transformações**:
-- Limpeza de dados (nulls, duplicatas)
-- Joins entre clientes, marcas e faturas
-- Cálculos de métricas (dias_atraso, valor_em_aberto)
-- Classificação de risco
+### 4. Modeling (`04_modeling/`)
+| Notebook | Model | Library |
+|---|---|---|
+| `01_modelo_classificacao_risco` | Delinquency classifier | XGBoost + SHAP |
+| `02_modelo_regressao` | Monetary value at risk | XGBoost Regressor |
+| `03_modelo_forecast_cashflow` | 90-day cashflow forecast | Prophet |
 
-```python
-# Silver transformation
-df_silver = df_bronze \
-    .join(df_clientes, "codigo_cliente") \
-    .withColumn("dias_atraso", datediff(current_date(), col("data_vencimento"))) \
-    .withColumn("faixa_atraso", classify_delay_bucket(...))
-```
-
-### 3. Feature Store
-
-**Tecnologia**: Unity Catalog Delta Tables
-**Features**: 17 features por cliente
-**Atualização**: Diária
-
-**Categorias de Features**:
-- RFM (Recency, Frequency, Monetary)
-- Comportamento de pagamento
-- Métricas de atraso
-- Valores agregados
-
-### 4. ML Training Pipeline
-
-**Framework**: Scikit-learn + MLflow
-**Algoritmo**: Random Forest Classifier
-**Métricas Tracked**:
-- Accuracy
-- Precision, Recall, F1
-- ROC-AUC
-- Feature Importance
-
-```python
-with mlflow.start_run():
-    model = RandomForestClassifier(**params)
-    model.fit(X_train, y_train)
-    mlflow.log_metrics({...})
-    mlflow.sklearn.log_model(model, "model")
-```
-
-### 5. Model Registry & Deployment
-
-**Registry**: Unity Catalog Model Registry
-**Aliases**:
-- `champion`: Modelo em produção
-- `challenger`: Modelo candidato
-
-**Deployment Options**:
-1. **Batch Inference**: Spark job semanal
-2. **REST API**: Model Serving endpoint (planned)
-3. **Embedded**: Python function em notebooks
+### 5. MLOps (`05_mlops/01_mlops_pipeline.py`) and Monitoring (`07_monitoring/`)
+Two complementary layers: a fuller MLOps pipeline that retrains, checks drift, and logs
+metrics/alerts/versions to dedicated Gold tables on every run; and a lightweight, standalone
+KS-test drift/health-check notebook for quick, ad-hoc inspection.
 
 ---
 
-## 🔄 Fluxo de Dados Completo
+## 🐍 PySpark-first convention
 
-```
-1. INGEST     → Bronze tables (raw data)
-2. TRANSFORM  → Silver tables (clean + enriched)
-3. AGGREGATE  → Gold tables (analytics-ready)
-4. ENGINEER   → Features (ML-ready)
-5. TRAIN      → Model (MLflow tracked)
-6. REGISTER   → Model Registry (versioned)
-7. DEPLOY     → Scoring (batch/API)
-8. MONITOR    → Drift detection (planned)
-9. RETRAIN    → Automated trigger (planned)
-```
+All ETL, joins, aggregations, and filtering over Bronze/Silver/Gold tables must use the Spark
+DataFrame API or Spark SQL — not pandas. `.toPandas()` is only acceptable:
 
----
+1. **Immediately before** a `.fit()` call for a library with no Spark-native equivalent, on an
+   already-small, already-aggregated table (one row per client): XGBoost's sklearn API, SHAP's
+   `TreeExplainer`, Prophet.
+2. For **synthetic data generation** with numpy/random distributions in `02_ingestion` (small,
+   one-off, not part of the recurring pipeline).
 
-## 🔐 Governança & Segurança
+Anywhere a `.apply(axis=1)` or `.iterrows()` shows up on a Spark-sourced DataFrame is a bug —
+replace it with vectorized pandas (`np.select`, `str.contains`, boolean masks) or push the logic
+back into Spark. `06_rag_validation/01_rag_notas_fiscais.py` documents a worked example of this
+(validation rules implemented with `np.select` instead of row-wise `.apply`).
 
-### Unity Catalog
-
-- **Catalogs**: workspace
-- **Schemas**: risco_bronze, risco_silver, risco_gold, risco_ml_features
-- **Tables**: Delta format com versionamento
-- **Permissions**: Granular por schema/table
-
-### Auditoria
-
-- **Delta Time Travel**: Acesso a versões anteriores
-- **MLflow Tracking**: Rastreabilidade de experimentos
-- **Lineage**: Databricks Unity Catalog lineage
+DataFrames read more than once in the same run are `.cache()`d and explicitly `.unpersist()`d after
+their last use (see `04_modeling/01_modelo_classificacao_risco.py`, `07_monitoring/01_drift_detection.py`).
 
 ---
 
-## 📊 Performance & Escalabilidade
+## ⚡ Performance & Delta maintenance
 
-### Volumes Atuais
-- Clientes: 300
-- Faturas: 4,486
-- Features: 300 × 17
-- Scoring: 300 predições/batch
-
-### Escalabilidade Projetada
-- Clientes: 50k+
-- Faturas: 1M+
-- Features: Delta caching
-- Scoring: Distributed PySpark
-
-### Otimizações
-- **Z-Ordering**: Por data_vencimento em faturas
-- **Partitioning**: Por ano/mês em faturas
-- **Caching**: Feature Store em memória
-- **Broadcast Joins**: Para tabelas pequenas (marcas)
+- **Partitioning**: `bronze.faturas` and `silver.faturas_enriquecidas` are partitioned by
+  `ano_mes_emissao` (year-month), matching the temporal filters used across feature engineering and
+  monitoring.
+- **OPTIMIZE + ZORDER**: `01_setup/03_manutencao_delta.py` runs `OPTIMIZE ... ZORDER BY` on the most
+  frequently joined/filtered Gold tables (`id_cliente`), and on `silver.faturas_enriquecidas`
+  (`id_cliente, data_vencimento`).
+- **VACUUM**: same notebook, default 7-day retention. This is a separate, schedulable maintenance
+  routine — it does not run automatically as part of the main pipeline.
+- **Photon**: recommended (cluster/warehouse setting, not code) — the workload is dominated by
+  SQL/DataFrame aggregations (feature engineering, drift detection), which benefit directly from
+  Photon's vectorized engine.
 
 ---
 
-## 🚀 Roadmap Técnico
+## 🔐 Governance
 
-### Fase 1: MVP ✅
-- [x] Arquitetura Medallion
-- [x] Feature Engineering
-- [x] Modelo de Classificação
-- [x] Batch Inference
-- [x] MLflow Tracking
-
-### Fase 2: MLOps (Planejado)
-- [ ] Model Serving REST API
-- [ ] Drift Detection
-- [ ] Automated Retraining
-- [ ] A/B Testing (Champion vs Challenger)
-- [ ] Inference Tables para auditoria
-
-### Fase 3: Avançado (Planejado)
-- [ ] Modelo de Regressão (valor não recebido)
-- [ ] Forecast de Cash Flow (Prophet/ARIMA)
-- [ ] RAG para validação de notas fiscais
-- [ ] Alertas automáticos (Slack/Email)
+- **Catalog**: `credit_risk` (parameterized via a `catalog` widget in every notebook — never
+  hardcoded, so the same code runs against any catalog name/workspace)
+- **Schemas**: `bronze`, `silver`, `gold`
+- **Permissions**: `01_setup/02_configurar_permissoes.py` — data engineers (full access),
+  data scientists (read bronze/silver, full gold), business users (read gold only)
+- **Auditability**: Delta Time Travel, MLflow experiment tracking, Unity Catalog lineage
 
 ---
 
-**Autor**: Valdomiro Vega García  
-**Data**: 02/07/2026
-**Versão Arquitetura**: 1.0
+## 🚀 Roadmap
+
+See the [README](../README.md#-roadmap) for the current split between what's implemented in this
+repo and what's documented as future work.

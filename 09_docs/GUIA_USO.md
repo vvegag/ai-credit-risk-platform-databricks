@@ -1,179 +1,84 @@
-# 📖 Guia de Uso - Projeto Inadimplência
+# 📖 Usage Guide — AI Credit Risk Platform
 
-## 🚀 Início Rápido
+See the [README](../README.md#-quick-start) for full setup instructions (Asset Bundle or manual).
+This guide covers day-to-day usage once the pipeline has been run at least once.
 
-### 1. Executar Setup (Uma Vez)
-
-```python
-# Criar schemas no Unity Catalog
-# Já foi executado - schemas criados em workspace.risco_*
-```
-
-### 2. Gerar Dados (Primeira Vez)
-
-Os dados sintéticos já foram gerados:
-- 20 marcas
-- 300 clientes (200 PJ, 100 PF)
-- 4,486 faturas
-- R$ 85.4M faturado
-- R$ 11.5M inadimplente (13.46%)
-
-### 3. Consultar Dados
+## 🔍 Querying the Data
 
 ```sql
--- Ver faturas enriquecidas
-SELECT * FROM workspace.risco_silver.faturas_enriquecidas
-WHERE status_enriquecido = 'Risco Alto'
-LIMIT 10;
+-- Highest-risk invoices still open
+SELECT id_fatura, id_cliente, valor_total, dias_atraso, valor_em_aberto
+FROM credit_risk.silver.faturas_enriquecidas
+WHERE pago_flag = 0 AND dias_atraso > 30
+ORDER BY valor_em_aberto DESC;
 
--- Ver predições de risco
-SELECT 
-    codigo_cliente,
-    nome_cliente,
-    total_em_aberto,
-    prob_inadimplente,
-    classe_risco
-FROM workspace.risco_gold.predicoes_inadimplencia
-WHERE classe_risco = 'Crítico'
-ORDER BY total_em_aberto DESC;
+-- Clients with the highest predicted delinquency probability
+SELECT id_cliente, perfil_comportamental, probabilidade_inadimplencia
+FROM credit_risk.gold.model_predictions
+WHERE predicao_inadimplente = 1
+ORDER BY probabilidade_inadimplencia DESC
+LIMIT 20;
 ```
 
 ---
 
-## 🔬 Como Usar o Modelo ML
+## 🔬 Using the Trained Model
 
-### Carregar Modelo do MLflow
+### Load from MLflow
 
 ```python
 import mlflow
 
-# Carregar modelo treinado
-run_id = "9bc188f497b24fa0ba99b7352361450b"  # ID do run
-model = mlflow.sklearn.load_model(f"runs:/{run_id}/model")
-
-# Fazer predição
-import pandas as pd
-novo_cliente = pd.DataFrame({
-    'recencia_dias': [45],
-    'frequencia_faturas': [12],
-    'monetario_total': [150000],
-    # ... outras 14 features
-})
-
-probabilidade = model.predict_proba(novo_cliente)[0, 1]
-print(f"Probabilidade de inadimplência: {probabilidade:.2%}")
+run_id = "<run_id_from_mlflow_experiment>"
+model = mlflow.xgboost.load_model(f"runs:/{run_id}/model")
 ```
 
-### Batch Scoring
+### Batch scoring
 
 ```python
-# Carregar features
-df = spark.table("workspace.risco_ml_features.features_clientes").toPandas()
-X = df[feature_cols].fillna(0)
-
-# Predições
-df['prob_risco'] = model.predict_proba(X)[:, 1]
-
-# Salvar resultados
-spark.createDataFrame(df).write.mode("overwrite") \
-    .saveAsTable("workspace.risco_gold.scores_atualizados")
+CATALOG = "credit_risk"
+df = spark.table(f"{CATALOG}.gold.features_ml").toPandas()
+# Apply the same feature selection / one-hot encoding used in
+# 04_modeling/01_modelo_classificacao_risco.py before predicting.
 ```
+
+`05_mlops/01_mlops_pipeline.py` already implements a full retraining + validation + versioning
+flow — prefer extending that notebook over writing a new scoring script from scratch.
 
 ---
 
-## 📊 Dashboards e Visualizações
+## 📊 Dashboards and Genie Space
 
-### Dashboard Executivo
+Dashboard exports live in `08_dashboards/exports/` (`.lvdash.json`) — import them via
+**Dashboards → Import** in the Databricks UI, then point the datasets at `credit_risk.gold.*`.
 
-Criar em AI/BI Dashboards com tabela `workspace.risco_gold.predicoes_inadimplencia`:
-
-**KPIs Principais:**
-- Total em Risco (soma de total_em_aberto onde prob > 0.6)
-- Taxa de Inadimplência Média
-- Clientes em Risco Crítico (count onde classe_risco = 'Crítico')
-
-**Visualizações:**
-1. **Gráfico de Pizza**: Distribuição por classe_risco
-2. **Gráfico de Barras**: Top 20 clientes por prob_inadimplente
-3. **Tabela Detalhada**: Filtros por perfil, tipo_pessoa, risco
-
-### Genie Space
-
-Criar Genie Space apontando para `workspace.risco_gold.*`:
-
-**Perguntas de Exemplo:**
-- "Quais clientes têm mais de R$ 100k em aberto?"
-- "Qual a taxa de inadimplência por perfil de pagamento?"
-- "Mostre os 10 clientes de maior risco"
+For a **Genie Space** (documented as future work — not built in this repo), point it at
+`credit_risk.gold.model_predictions` and `credit_risk.gold.features_ml`. Example questions:
+- "Which clients have more than R$100k in `valor_em_aberto`?"
+- "What's the delinquency rate by `perfil_comportamental`?"
 
 ---
 
-## 🔄 Pipeline de Retreinamento
+## 🔄 Retraining
 
-### Quando Retreinar?
-
-- **Semanal**: Se houver novos dados significativos
-- **Mensal**: Como rotina de manutenção
-- **Sob Demanda**: Se performance cair >5%
-
-### Como Retreinar
-
-```python
-# 1. Atualizar features
-spark.sql("REFRESH TABLE workspace.risco_ml_features.features_clientes")
-
-# 2. Treinar novo modelo
-# ... (mesmo código de treinamento)
-
-# 3. Comparar métricas
-# Se novo modelo > modelo atual: deploy
-# Caso contrário: manter modelo atual
-```
+`05_mlops/01_mlops_pipeline.py` implements the retraining workflow: load current data, retrain,
+compare metrics against the previous version, and decide whether to promote the new model — logging
+the decision to `credit_risk.gold.model_versions` and `model_alerts`. Trigger it manually, or wire it
+into the scheduled Job defined in `databricks.yml`.
 
 ---
 
 ## 🛠️ Troubleshooting
 
-### Problema: Modelo com performance ruim
-
-**Solução:**
-1. Verificar distribuição do target (deve ter ~20-30% inadimplentes)
-2. Checar features com valores NULL
-3. Avaliar feature importance
-
-### Problema: Predições muito conservadoras/agressivas
-
-**Solução:**
-1. Ajustar threshold de classificação
-2. Recalibrar probabilidades
-3. Retreinar com mais dados
-
-### Problema: Tabelas não encontradas
-
-**Solução:**
+**Table not found** — confirm the `catalog` widget matches where you actually ran setup:
 ```sql
--- Verificar schemas existentes
-SHOW SCHEMAS IN workspace LIKE 'risco%';
-
--- Recriar se necessário
-CREATE SCHEMA IF NOT EXISTS workspace.risco_bronze;
+SHOW SCHEMAS IN credit_risk;
 ```
 
----
+**Silver/Gold tables empty or stale** — re-run `03_feature_engineering/01_` through `04_` in order;
+each one depends on the previous (Bronze → Silver → Gold aggregates → RFM → clustering).
 
-## 📈 Métricas de Sucesso
-
-**Modelo:**
-- Accuracy > 0.85
-- Precision@Top20% > 0.80 (acertar os 20% de maior risco)
-- ROC-AUC > 0.85
-
-**Negócio:**
-- Redução de inadimplência >180 dias em 30%
-- Aumento de contatos proativos de cobrança em 50%
-- Redução de perda total (write-offs) em 20%
-
----
-
-**Autor**: Valdomiro Vega García  
-**Data**: 02/07/2026
+**Model performance looks off** — check the target distribution first
+(`SELECT categoria_risco, COUNT(*) FROM credit_risk.bronze.clientes GROUP BY categoria_risco`,
+should be roughly 70/20/10 for a fresh synthetic run), then check for drift via
+`07_monitoring/01_drift_detection.py`.

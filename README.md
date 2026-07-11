@@ -16,10 +16,10 @@
 - **Predictive Analytics**: Identify high-risk customers before delinquency occurs
 - **Value Estimation**: Quantify monetary risk for prioritization
 - **Cashflow Forecasting**: 12-month ahead predictions for financial planning
-- **Document Automation**: RAG-based invoice validation system
+- **Document Automation**: RAG-based invoice validation (prototype)
 - **Continuous Monitoring**: Drift detection and data quality checks
 
-**Impact**: R$ 9M in risk mapped, 60 critical clients identified, 75% automation in validation, 80% time reduction.
+**Impact**: demonstrates the full pipeline end-to-end on synthetic data — see the [Results](#-results) section for what "end-to-end" means in this repo and what's still a prototype.
 
 ---
 
@@ -27,11 +27,13 @@
 
 ### 🎯 Machine Learning Models
 
-| Model | Type | Performance | Purpose |
-|-------|------|-------------|---------|
-| **Risk Classifier** | XGBoost | AUC: 0.88, Acc: 85% | Predict delinquency probability & risk class |
-| **Value Regressor** | XGBoost | R²: 0.74 | Estimate monetary value at risk |
-| **Cashflow Forecast** | Prophet | 12-month horizon | Time series prediction for financial planning |
+| Model | Type | Purpose |
+|-------|------|---------|
+| **Risk Classifier** | XGBoost + SHAP | Predict delinquency probability & risk class |
+| **Value Regressor** | XGBoost | Estimate monetary value at risk |
+| **Cashflow Forecast** | Prophet | 90-day cashflow prediction with confidence intervals |
+
+Performance numbers depend on the specific synthetic data run — see [Results](#-results) below.
 
 ### 🏗️ Architecture
 
@@ -58,8 +60,8 @@
 
 ### 🤖 RAG System for Document Validation
 
-- **PDF Parsing**: Extract structured data from invoices
-- **Embeddings**: Sentence-Transformers for semantic understanding
+- **Document simulation**: invoice text materialized as `.txt` files on disk (stand-in for an OCR/parsing output), then read back from disk before embedding
+- **Embeddings**: Sentence-Transformers for semantic understanding (no chunking — each invoice is already a short, atomic text)
 - **Vector Search**: FAISS for fast similarity matching
 - **Business Rules**: Automated validation against contracts
 - **Workflow**: Auto-approve, flag for review, or reject
@@ -76,25 +78,48 @@
 ## 📂 Project Structure
 
 ```
-ai-credit-risk-platform/
-├── 01_setup/                   # Initial setup and configuration
-├── 02_ingestion/               # Bronze layer data ingestion
-├── 03_feature_engineering/     # Feature creation (28 features)
+ai-credit-risk-platform-databricks/
+├── 01_setup/
+│   ├── 01_criar_catalogo_schemas.py    # Creates the credit_risk catalog + bronze/silver/gold schemas
+│   ├── 02_configurar_permissoes.py     # Unity Catalog GRANTs (data engineers/scientists/business users)
+│   └── 03_manutencao_delta.py          # OPTIMIZE / ZORDER / VACUUM maintenance routine
+├── 02_ingestion/
+│   ├── 01_popular_dados_completos.py   # Synthetic Bronze data generator (clients, invoices, payments)
+│   ├── 02_ingestao_csv_manuais.py      # Auto Loader for manual CSVs
+│   ├── 04_gerar_pdfs_notas.py          # Sample invoice PDF generator
+│   └── sample_data/
+│       ├── csvs/                       # Sample CSVs used by the manual-ingestion demo
+│       ├── notas_fiscais/              # Sample invoice PDFs (gitignored)
+│       └── notas_fiscais_txt/          # Simulated "physical" invoice text used by the RAG prototype
+├── 03_feature_engineering/
+│   ├── 01_transformacao_silver.py      # Bronze → Silver (cleaning, typing, invoice enrichment)
+│   ├── 02_transformacao_gold.py        # Silver → Gold aggregated features (90/180/365d windows)
+│   ├── 03_feature_store_rfm.py         # RFM scoring (Recency/Frequency/Monetary)
+│   └── 04_clustering_features_ml.py    # K-Means behavioral profiles → final ML feature table
 ├── 04_modeling/
-│   ├── 01_modelo_classificacao     # XGBoost Classifier
-│   ├── 02_modelo_regressao         # XGBoost Regressor
-│   └── 03_modelo_forecast_cashflow # Prophet Time Series
-├── 05_mlops/                   # MLflow tracking and model registry
-├── 06_rag_validation/          # RAG system for invoice validation
-├── 07_monitoring/              # Drift detection and health checks
-├── 08_dashboards/              # AI/BI Dashboard exports
-├── 09_docs/                    # Documentation and diagrams
+│   ├── 01_modelo_classificacao_risco.py # XGBoost Classifier + SHAP + MLflow
+│   ├── 02_modelo_regressao.py           # XGBoost Regressor (monetary value at risk)
+│   └── 03_modelo_forecast_cashflow.py   # Prophet cashflow forecast
+├── 05_mlops/
+│   └── 01_mlops_pipeline.py            # Retraining, drift checks, metrics/alerts, versioning
+├── 06_rag_validation/
+│   └── 01_rag_notas_fiscais.py         # RAG-style invoice validation (prototype, see note below)
+├── 07_monitoring/
+│   └── 01_drift_detection.py           # KS-test data drift + prediction monitoring
+├── 08_dashboards/exports/              # AI/BI dashboard exports (.lvdash.json)
+├── 09_docs/                            # Architecture, data dictionary, usage guide
 ├── .gitignore
+├── databricks.yml                      # Databricks Asset Bundle (job definition, catalog variable)
+├── requirements.txt
 ├── LICENSE
-├── README.md
-├── GUIA_GITHUB.md             # GitHub setup guide (Portuguese)
-└── setup_github.sh            # Automated Git setup script
+└── README.md
 ```
+
+> ⚠️ **RAG note**: `06_rag_validation` is a **prototype** — it simulates invoice text from existing
+> records, writes each one as a `.txt` file under `02_ingestion/sample_data/notas_fiscais_txt/`
+> (stand-in for a "physical" document already parsed), reads it back from disk, and indexes it with
+> a local FAISS index — not a real PDF/OCR pipeline or Databricks Vector Search. See the Roadmap
+> below for what a production version would add.
 
 ---
 
@@ -102,57 +127,53 @@ ai-credit-risk-platform/
 
 ### Prerequisites
 
-- Databricks Workspace (Azure, AWS, or GCP)
-- Unity Catalog enabled
-- Serverless Compute (or cluster with ML Runtime 14+)
+- Databricks Workspace (Azure, AWS, or GCP) with Unity Catalog enabled
+- Serverless Compute (or a cluster with ML Runtime 14+)
+- [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) configured (`databricks configure`), if using the Asset Bundle path
 
-### Setup
+### Option A — Deploy with Databricks Asset Bundle (recommended)
 
-1. **Clone this repository** into your Databricks Workspace:
-   ```bash
-   # Via Databricks UI: Workspace → Repos → Add Repo
-   # URL: https://github.com/vvegag/ai-credit-risk-platform.git
-   ```
+```bash
+git clone https://github.com/vvegag/ai-credit-risk-platform-databricks.git
+cd ai-credit-risk-platform-databricks
+databricks bundle deploy -t dev
+databricks bundle run credit_risk_pipeline -t dev
+```
 
-2. **Run setup notebook**:
-   - Navigate to `01_setup/`
-   - Execute setup notebooks to create schemas and sample data
+This uploads the notebooks and creates a Job that runs the full pipeline end-to-end (setup → ingestion →
+feature engineering → modeling → monitoring), using the `catalog` variable defined in `databricks.yml`
+(default: `credit_risk`). See `databricks.yml` to change the catalog name or schedule.
 
-3. **Execute pipeline**:
-   ```
-   02_ingestion → 03_feature_engineering → 04_modeling
-   ```
+### Option B — Manual setup
 
-4. **View dashboard**:
-   - Import dashboard from `08_dashboards/`
-   - Connect to Unity Catalog tables
+1. **Clone into your Workspace**: `Workspace → Git folders → Add Git folder`, paste the repo URL.
+2. **Setup**: run `01_setup/01_criar_catalogo_schemas.py`, then `02_configurar_permissoes.py`.
+3. **Ingestion**: run `02_ingestion/01_popular_dados_completos.py` (and optionally `02_`, `04_`).
+4. **Feature engineering**: run `03_feature_engineering/01_` through `04_` in order.
+5. **Modeling**: run `04_modeling/01_` through `03_` in order.
+6. **MLOps**: run `05_mlops/01_mlops_pipeline.py`.
+7. **Monitoring**: run `07_monitoring/01_drift_detection.py`.
+
+All notebooks expose a `catalog` widget (default `credit_risk`) — no hardcoded workspace paths or
+personal usernames anywhere in the code.
 
 ---
 
 ## 📊 Results
 
-### Business Impact
+> ⚠️ **On synthetic data**: all figures below come from a run against the synthetic dataset
+> generated by `02_ingestion/01_popular_dados_completos.py` (controlled distributions, not real
+> production data). They illustrate the pipeline working end-to-end — they are **not** a claim of
+> production-grade model performance. Re-running the pipeline will produce different numbers.
 
-| Metric | Value | Impact |
-|--------|-------|--------|
-| **Critical Clients Identified** | 60 | Proactive risk management |
-| **Total Risk Mapped** | R$ 9M | Quantified exposure |
-| **Delinquency Rate** | 21.51% | Tracked and monitored |
-| **Automation Rate** | 75% | Invoice validation |
-| **Time Reduction** | 80% | 2h → 24min per batch |
+### Example Model Performance (synthetic data)
 
-### Model Performance
+- **Classification** (`04_modeling/01_modelo_classificacao_risco.py`): XGBoost + SHAP, tracked via MLflow
+- **Regression** (`04_modeling/02_modelo_regressao.py`): monetary value at risk per client
+- **Forecast** (`04_modeling/03_modelo_forecast_cashflow.py`): 90-day cashflow prediction with confidence intervals (Prophet)
 
-- **Classification**: 88% AUC, 85% Accuracy
-- **Regression**: R² 0.74, MAE ~R$ 15k
-- **Forecast**: 12-month cashflow prediction with confidence intervals
-
-### Dashboard KPIs
-
-- 🔴 **60 Critical Clients** requiring immediate action
-- 📉 **21.51% Delinquency Rate** across portfolio
-- 💰 **R$ 9.0M Total Value at Risk**
-- 📈 **R$ 1.4M Predicted Revenue** (next 30 days)
+Exact metric values depend on the specific synthetic run — check the MLflow experiment after running
+`04_modeling/` yourself, or `credit_risk.gold.model_metrics` after `05_mlops/01_mlops_pipeline.py`.
 
 ---
 
@@ -181,33 +202,31 @@ ai-credit-risk-platform/
 
 ## 📈 Roadmap
 
-### Phase 1 ✅ (Completed)
-- [x] Medallion architecture (Bronze-Silver-Gold)
-- [x] 3 ML models (classification, regression, forecast)
-- [x] RAG system for document validation
-- [x] Drift detection and monitoring
-- [x] Executive dashboard with filters
+### ✅ Implemented in this repo
+- [x] Medallion architecture (Bronze → Silver → Gold), 100% PySpark-native ETL
+- [x] 3 ML models: classification (XGBoost + SHAP), regression, cashflow forecast (Prophet)
+- [x] MLOps pipeline: retraining, drift checks, metrics/alerts tables, model versioning (`05_mlops/01_mlops_pipeline.py`)
+- [x] Standalone KS-test drift detection + health checks (`07_monitoring/01_drift_detection.py`)
+- [x] Delta maintenance routine: `OPTIMIZE`/`ZORDER`/`VACUUM` (`01_setup/03_manutencao_delta.py`)
+- [x] Databricks Asset Bundle (`databricks.yml`) orchestrating the full pipeline as a scheduled Job
+- [x] RAG-style invoice validation — **prototype** (see note above), not yet backed by Vector Search
+- [x] AI/BI executive dashboard with filters (exports in `08_dashboards/`)
 
-### Phase 2 🚧 (In Progress)
-- [ ] Genie Space for self-service analytics
-- [ ] Databricks Jobs for automation (weekly retraining, batch scoring)
-- [ ] Email/Slack alerts for drift and critical clients
-
-### Phase 3 🔮 (Planned)
-- [ ] Real-time scoring via Model Serving
+### 🚧 Documented as future work (not built in this repo)
+- [ ] **Genie Space** for self-service natural-language analytics
+- [ ] **Slack/email alerts** wired to the drift/alerts tables already produced by `05_mlops/01_mlops_pipeline.py`
+- [ ] **Real-time Model Serving** endpoint for the registered classifier
+- [ ] Production RAG: real PDF/OCR parsing + Databricks Vector Search instead of local FAISS
 - [ ] A/B testing for collection strategies
-- [ ] CRM integration (Salesforce)
-- [ ] Next Best Action recommendations
-- [ ] Lifetime Value (LTV) prediction
+- [ ] CRM integration (Salesforce), Next Best Action, Lifetime Value (LTV) prediction
 
 ---
 
 ## 📚 Documentation
 
-- **[Project Summary](PROJECT_SUMMARY.md)** - Executive overview and technical deep-dive
-- **[GitHub Setup Guide](GUIA_GITHUB.md)** - Step-by-step guide to publish (Portuguese)
-- **[Architecture Diagrams](09_docs/diagrams/)** - Visual representations
-- **[Model Cards](09_docs/model_cards/)** - Detailed model documentation
+- **[Architecture](09_docs/ARQUITETURA.md)** — Medallion design, PySpark-first convention, performance notes
+- **[Data Dictionary](09_docs/DICIONARIO_DADOS.md)** — Tables and columns across bronze/silver/gold
+- **[Usage Guide](09_docs/GUIA_USO.md)** — How to run and extend the pipeline
 
 ---
 

@@ -1,0 +1,11 @@
+# Bibliotecas Python usadas pelos notebooks (instaladas via %pip install nas próprias células).
+# PySpark, Delta Lake e MLflow tracking já vêm no Databricks Runtime ML — não pinados aqui.
+xgboost==2.0.3
+scikit-learn==1.3.2
+prophet
+shap==0.44.0
+sentence-transformers
+faiss-cpu
+scipy
+seaborn==0.13.0
+reportlab

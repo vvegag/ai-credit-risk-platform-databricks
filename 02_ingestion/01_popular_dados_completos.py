@@ -20,6 +20,9 @@ import numpy as np
 
 spark = SparkSession.builder.getOrCreate()
 
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -190,6 +193,11 @@ schema_faturas = StructType([
 
 df_faturas = spark.createDataFrame(faturas_data, schema_faturas)
 
+# Coluna de partição (ano-mês de emissão): consultas de monitoring/feature engineering
+# filtram por janela temporal (90/180/365d), então particionar por data reduz o volume
+# escaneado em produção (data skipping), mesmo com o dataset sintético sendo pequeno hoje.
+df_faturas = df_faturas.withColumn("ano_mes_emissao", substring(col("data_emissao"), 1, 7))
+
 print(f"✅ {df_faturas.count()} faturas geradas")
 df_faturas.show(5)
 
@@ -236,19 +244,19 @@ df_pagamentos.show(5)
 # MAGIC %md
 # MAGIC ## 4. Salvar em Unity Catalog - Bronze Layer
 
-print("💾 Salvando dados em workspace.risco_bronze...\n")
+print(f"💾 Salvando dados em {CATALOG}.bronze...\n")
 
 # Salvar Clientes
-df_clientes.write.mode("overwrite").saveAsTable("workspace.risco_bronze.clientes_raw")
-print("✅ workspace.risco_bronze.clientes_raw criada")
+df_clientes.write.mode("overwrite").saveAsTable(f"{CATALOG}.bronze.clientes")
+print(f"✅ {CATALOG}.bronze.clientes criada")
 
-# Salvar Faturas
-df_faturas.write.mode("overwrite").saveAsTable("workspace.risco_bronze.faturas_raw")
-print("✅ workspace.risco_bronze.faturas_raw criada")
+# Salvar Faturas (particionada por ano_mes_emissao — ver comentário na criação da coluna)
+df_faturas.write.mode("overwrite").partitionBy("ano_mes_emissao").saveAsTable(f"{CATALOG}.bronze.faturas")
+print(f"✅ {CATALOG}.bronze.faturas criada (particionada por ano_mes_emissao)")
 
 # Salvar Pagamentos
-df_pagamentos.write.mode("overwrite").saveAsTable("workspace.risco_bronze.pagamentos_raw")
-print("✅ workspace.risco_bronze.pagamentos_raw criada")
+df_pagamentos.write.mode("overwrite").saveAsTable(f"{CATALOG}.bronze.pagamentos")
+print(f"✅ {CATALOG}.bronze.pagamentos criada")
 
 # COMMAND ----------
 
@@ -258,24 +266,24 @@ print("✅ workspace.risco_bronze.pagamentos_raw criada")
 print("\n🔍 Validando dados gerados...\n")
 
 print("📊 RESUMO:")
-print(f"  • Clientes: {spark.table('workspace.risco_bronze.clientes_raw').count():,}")
-print(f"  • Faturas: {spark.table('workspace.risco_bronze.faturas_raw').count():,}")
-print(f"  • Pagamentos: {spark.table('workspace.risco_bronze.pagamentos_raw').count():,}")
+print(f"  • Clientes: {spark.table(f'{CATALOG}.bronze.clientes').count():,}")
+print(f"  • Faturas: {spark.table(f'{CATALOG}.bronze.faturas').count():,}")
+print(f"  • Pagamentos: {spark.table(f'{CATALOG}.bronze.pagamentos').count():,}")
 
 print("\n📈 DISTRIBUIÇÃO DE RISCO (Clientes):")
-spark.sql("""
-    SELECT categoria_risco, COUNT(*) as total, 
+spark.sql(f"""
+    SELECT categoria_risco, COUNT(*) as total,
            ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as percentual
-    FROM workspace.risco_bronze.clientes_raw
+    FROM {CATALOG}.bronze.clientes
     GROUP BY categoria_risco
     ORDER BY categoria_risco
 """).show()
 
 print("📈 DISTRIBUIÇÃO DE STATUS (Faturas):")
-spark.sql("""
+spark.sql(f"""
     SELECT status, COUNT(*) as total,
            ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as percentual
-    FROM workspace.risco_bronze.faturas_raw
+    FROM {CATALOG}.bronze.faturas
     GROUP BY status
     ORDER BY status
 """).show()

@@ -1,146 +1,142 @@
-# 📚 Dicionário de Dados - Projeto Inadimplência
+# 📚 Data Dictionary — AI Credit Risk Platform
 
-## 🗂️ Estrutura de Tabelas
+Catalog: `credit_risk` (name parameterized via a `catalog` widget in every notebook).
 
-### BRONZE LAYER (workspace.risco_bronze)
+## 🥉 BRONZE (`credit_risk.bronze`)
 
-#### marcas_raw
-Cadastro de marcas/clientes B2B
+#### `clientes`
+| Column | Type | Description |
+|---|---|---|
+| id_cliente | int | Client ID (PK) |
+| nome | string | Company/client name |
+| cnpj | string | Tax ID |
+| setor | string | Industry sector |
+| porte | string | Small / Medium / Large |
+| receita_anual | long | Annual revenue |
+| score_risco | int | Initial synthetic risk score |
+| categoria_risco | string | Low / Medium / High (synthetic generation label) |
+| data_cadastro | string | Registration date |
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| codigo_marca | string | Identificador único da marca |
-| nome_marca | string | Nome fantasia da marca |
-| segmento | string | Segmento de mercado (Moda, Alimentos, etc) |
-| unidade_negocio | string | Unidade de negócio CRMBonus |
-| tier | string | Classificação (Tier 1-4) |
-| data_cadastro | date | Data de cadastro no sistema |
+#### `faturas` (partitioned by `ano_mes_emissao`)
+| Column | Type | Description |
+|---|---|---|
+| id_fatura | int | Invoice ID (PK) |
+| id_cliente | int | FK → clientes |
+| valor | double | Invoice amount |
+| data_emissao | string | Issue date |
+| data_vencimento | string | Due date |
+| data_pagamento | string | Actual payment date (null if unpaid) |
+| status | string | Paga / Pendente / Atrasada |
+| dias_atraso | int | Days past due |
+| ano_mes_emissao | string | `YYYY-MM` — partition column |
 
-#### clientes_raw
-Cadastro de clientes (PF + PJ)
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| codigo_cliente | string | ID único do cliente |
-| nome_cliente | string | Nome/Razão Social |
-| tipo_pessoa | string | PF ou PJ |
-| codigo_marca | string | FK para marcas_raw |
-| data_cadastro | date | Data de cadastro |
-| perfil_pagamento | string | Pontual/Cronico/Instavel/Risco |
-
-#### faturas_raw
-Faturas emitidas
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| titulo | string | Número da fatura (PK) |
-| codigo_cliente | string | FK para clientes |
-| codigo_marca | string | FK para marcas |
-| data_emissao | date | Data de emissão |
-| data_vencimento | date | Data de vencimento |
-| data_pagamento | date | Data real de pagamento (NULL se pendente) |
-| valor_titulo | double | Valor original faturado |
-| valor_pagado | double | Valor efetivamente pago |
-| status | string | Pago/Pendente/Parcial |
+#### `pagamentos`
+| Column | Type | Description |
+|---|---|---|
+| id_pagamento | int | Payment ID (PK) |
+| id_fatura | int | FK → faturas |
+| id_cliente | int | FK → clientes |
+| valor | double | Amount paid |
+| data_pagamento | string | Payment date |
+| forma_pagamento | string | Boleto / Transferência / Cartão / PIX |
 
 ---
 
-### SILVER LAYER (workspace.risco_silver)
+## 🥈 SILVER (`credit_risk.silver`)
 
-#### faturas_enriquecidas
-Faturas com cálculos e enriquecimentos
+#### `clientes`
+Same columns as Bronze, deduplicated and trimmed.
 
-**Todas as colunas do Bronze +**
+#### `faturas_enriquecidas` (partitioned by `ano_mes_emissao`)
+All `faturas` columns, with `valor` renamed to `valor_total`, plus:
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| dias_desde_vencimento | int | Dias desde o vencimento |
-| dias_atraso | int | Dias de atraso efetivo |
-| valor_em_aberto | double | Diferença não paga |
-| faixa_atraso | string | Por Vencer, 01-30d, 31-60d, etc |
-| status_enriquecido | string | Recebido/Vencido/Risco Médio/Alto/Perda Provável |
-| total_faturado_cliente | double | Total histórico por cliente |
-| total_pago_cliente | double | Total pago por cliente |
-| num_faturas_cliente | long | Quantidade de faturas por cliente |
-| taxa_inadimplencia_cliente | double | % inadimplência do cliente |
+| Column | Type | Description |
+|---|---|---|
+| valor_pago_total | double | Sum of payments matched to this invoice |
+| forma_pagamento | string | Payment method (from `pagamentos`) |
+| pago_flag | int | 1 if `status = 'Paga'` |
+| valor_em_aberto | double | `valor_total - valor_pago_total` when unpaid, else 0 |
 
 ---
 
-### GOLD LAYER (workspace.risco_gold)
+## 🥇 GOLD (`credit_risk.gold`)
 
-#### predicoes_inadimplencia
-Predições do modelo ML
+#### `features_agregadas`
+Client columns + temporal aggregates over `faturas_enriquecidas`:
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| codigo_cliente | string | ID do cliente |
-| nome_cliente | string | Nome do cliente |
-| tipo_pessoa | string | PF/PJ |
-| perfil_pagamento | string | Perfil real |
-| total_em_aberto | double | Valor pendente total |
-| taxa_inadimplencia | double | % inadimplência histórica |
-| inadimplente | int | Label real (0/1) |
-| predicao_inadimplente | int | Predição do modelo (0/1) |
-| prob_inadimplente | double | Probabilidade [0-1] |
-| classe_risco | string | Baixo/Médio/Alto/Crítico |
+| Column | Type | Description |
+|---|---|---|
+| total_faturado_90d / 180d / 365d | double | Revenue billed in each trailing window |
+| count_faturas_total / pagas / pendentes / atrasadas | long | Invoice counts by status |
+| valor_medio_fatura, desvio_padrao_valores, valor_minimo_fatura, valor_maximo_fatura | double | Invoice value statistics |
+| taxa_pagamento | double | % of invoices paid |
+| taxa_inadimplencia | double | % of invoices past due |
 
----
+#### `features_rfm`
+All `features_agregadas` columns +
 
-### ML FEATURES (workspace.risco_ml_features)
+| Column | Type | Description |
+|---|---|---|
+| recency_dias | int | Days since the client's last invoice |
+| rfm_score | int | 1 (worst) – 5 (best) |
+| categoria_rfm | string | Premium / Regular / Em Risco |
 
-#### features_clientes
-Feature Store para modelos ML
+#### `features_ml` ⭐ (final feature table used by every model in `04_modeling/`)
+All `features_rfm` columns +
 
-| Feature | Tipo | Descrição |
-|---------|------|-----------|
-| **RFM** | | |
-| recencia_dias | int | Dias desde última fatura |
-| frequencia_faturas | long | Número total de faturas |
-| monetario_total | double | Valor total faturado |
-| valor_medio_fatura | double | Ticket médio |
-| **Comportamento** | | |
-| num_pagas | long | Faturas pagas |
-| num_pendentes | long | Faturas pendentes |
-| num_parciais | long | Pagamentos parciais |
-| **Atrasos** | | |
-| media_dias_atraso | double | Média de dias de atraso |
-| max_dias_atraso | int | Maior atraso registrado |
-| num_atrasos_30plus | long | Atrasos >30 dias |
-| num_atrasos_90plus | long | Atrasos >90 dias |
-| **Valores** | | |
-| total_em_aberto | double | Valor não recebido |
-| total_pago | double | Valor recebido |
-| taxa_inadimplencia | double | % inadimplência |
-| **Risco** | | |
-| num_faturas_risco_alto | long | Faturas em risco alto |
-| taxa_pagamento | double | % faturas pagas |
-| taxa_atraso_frequente | double | % atrasos frequentes |
-| valor_medio_em_aberto | double | Ticket médio em aberto |
-| **Target** | | |
-| inadimplente | int | Label para ML (0/1) |
+| Column | Type | Description |
+|---|---|---|
+| cluster | int | K-Means cluster id (k=4) |
+| perfil_comportamental | string | Alto Risco / Médio Risco / Baixo Risco / Premium |
 
----
+#### `model_predictions`
+Output of `04_modeling/01_modelo_classificacao_risco.py`.
 
-## 📊 Métricas de Negócio
+| Column | Type | Description |
+|---|---|---|
+| id_cliente | int | Client ID |
+| perfil_comportamental | string | Behavioral profile at prediction time |
+| probabilidade_inadimplencia | double | Predicted probability [0–1] |
+| predicao_inadimplente | int | Predicted class (0/1) |
+| perfil_real | int | Ground-truth label used in training |
 
-### Taxa de Inadimplência
-```
-(valor_faturado - valor_pago) / valor_faturado * 100
-```
+#### `previsao_valor_inadimplente`
+Output of `04_modeling/02_modelo_regressao.py`: `id_cliente`, `valor_em_risco` (actual),
+`valor_previsto`, `erro_previsao`, `categoria_risco_monetario`.
 
-### Perfil de Risco
-- **Pontual**: Paga na data ou até 5 dias após
-- **Crônico**: Sempre paga com 20-40 dias de atraso
-- **Instável**: Comportamento irregular
-- **Risco**: >90 dias de atraso ou múltiplas pendências
+#### `forecast_cashflow`
+Output of `04_modeling/03_modelo_forecast_cashflow.py`: `data_prevista`, `cashflow_previsto`,
+`cashflow_min`, `cashflow_max`, `risco_cashflow`, `dias_futuro`, `janela`.
 
-### Classificação de Probabilidade
-- **Baixo**: prob < 0.3
-- **Médio**: 0.3 <= prob < 0.6
-- **Alto**: 0.6 <= prob < 0.8
-- **Crítico**: prob >= 0.8
+#### `validacao_notas_fiscais`
+Output of `06_rag_validation/01_rag_notas_fiscais.py` (prototype): `id_fatura`, `id_cliente`,
+`valor_nf`, `valor_fatura`, `status`, `criticidade`, `issues`, `num_issues`, `data_upload`.
+
+Source text: each row's synthetic invoice text is written to a `.txt` file under
+`02_ingestion/sample_data/notas_fiscais_txt/` (stand-in for an already-parsed physical document),
+then read back from disk before embedding — no chunking, since each invoice is already a short,
+atomic text.
+
+#### `monitoring_logs`
+Output of `07_monitoring/01_drift_detection.py`: one row per run with drift/prediction summary
+stats (`percentual_drift`, `risco_critico_pct`, `alerta_drift`, `alerta_risco`, `status_geral`, ...).
+
+#### `model_metrics`, `model_alerts`, `model_versions`
+Produced by `05_mlops/01_mlops_pipeline.py` — production metrics history, active alerts, and
+model version/governance records. See that notebook for the exact schema (it's self-documenting:
+each table is created right before first use, with an explicit `CREATE TABLE`/`saveAsTable` call).
 
 ---
 
-**Autor**: Valdomiro Vega García  
-**Data**: 02/07/2026
+## 📊 Business Metrics
+
+**Delinquency rate**: `(valor_faturado - valor_pago) / valor_faturado * 100`
+
+**Behavioral profile** (K-Means cluster label, `features_ml.perfil_comportamental`):
+- **Baixo Risco**: high payment rate, low delinquency
+- **Premium**: high billing volume, moderate delinquency
+- **Médio Risco**: intermediate profile
+- **Alto Risco**: high delinquency rate, low recent activity
+
+**Classification target** (`04_modeling/01_modelo_classificacao_risco.py`): binary, defined as
+`taxa_inadimplencia > 40%`.

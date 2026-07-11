@@ -111,8 +111,11 @@ print(f"SHAP version: {shap.__version__}")
 # COMMAND ----------
 
 # DBTITLE 1,Carregar Tabela de Features
-# Carregar dados da tabela gold
-df_spark = spark.table("credit_risk.gold.features_ml")
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
+
+# Carregar dados da tabela gold (cache: reutilizado em count/describe/limit/toPandas abaixo)
+df_spark = spark.table(f"{CATALOG}.gold.features_ml").cache()
 
 print(f"📊 Total de registros: {df_spark.count():,}")
 print(f"📊 Total de colunas: {len(df_spark.columns)}")
@@ -144,6 +147,7 @@ display(df_spark.describe())
 # DBTITLE 1,Converter para Pandas e Criar Target
 # Converter para Pandas para análise exploratória
 df_pd = df_spark.toPandas()
+df_spark.unpersist()  # dados já coletados para o pandas; libera memória do cluster
 
 # Criar variável target binária: inadimplente se taxa_inadimplencia > 40%
 df_pd['inadimplente'] = (df_pd['taxa_inadimplencia'] > 40).astype(int)
@@ -787,7 +791,7 @@ display(df_predictions.head(10))
 df_predictions_spark = spark.createDataFrame(df_predictions)
 
 # Salvar no Unity Catalog
-table_name = "credit_risk.gold.model_predictions"
+table_name = f"{CATALOG}.gold.model_predictions"
 
 df_predictions_spark.write \
     .mode("overwrite") \
@@ -867,7 +871,7 @@ print("  4. O threshold pode ser ajustado conforme o trade-off desejado entre FP
 
 print("\n📦 ARTEFATOS GERADOS:")
 print(f"  • Modelo salvo: {model_name} ({model_path})")
-print(f"  • Tabela de predições: credit_risk.gold.model_predictions")
+print(f"  • Tabela de predições: {table_name}")
 print(f"  • Plots e métricas: /tmp/ (10 arquivos)")
 print(f"  • Feature importance: /tmp/feature_importance.csv")
 
