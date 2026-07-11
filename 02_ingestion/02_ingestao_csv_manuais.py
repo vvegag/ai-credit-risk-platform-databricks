@@ -4,7 +4,7 @@
 # MAGIC 
 # MAGIC **Objetivo**: Ingerir CSVs de forma incremental usando Auto Loader
 # MAGIC **Fonte**: `/02_ingestion/sample_data/csvs/`
-# MAGIC **Destino**: `workspace.risco_bronze.*_csv`
+# MAGIC **Destino**: `{CATALOG}.bronze.*_csv`
 
 # COMMAND ----------
 
@@ -12,13 +12,20 @@ from pyspark.sql.functions import *
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
+
+# Caminho dos CSVs derivado do próprio notebook (funciona em qualquer workspace/Repo/Git folder)
+notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+repo_root = "/Workspace" + "/".join(notebook_path.split("/")[:-2])
+csv_path = f"{repo_root}/02_ingestion/sample_data/csvs/"
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## 1. Configurar Auto Loader para Clientes
 
 print("📥 Configurando Auto Loader para clientes_manuais.csv...\n")
-
-# Caminho dos CSVs
-csv_path = "/Workspace/Users/valdomirovega@hotmail.com/ai-credit-risk-platform-databricks/02_ingestion/sample_data/csvs/"
 
 # Checkpoint location
 checkpoint_clientes = "/tmp/autoloader_checkpoints/clientes_csv"
@@ -47,7 +54,7 @@ query_clientes = (df_clientes_csv.writeStream
     .option("checkpointLocation", checkpoint_clientes)
     .option("mergeSchema", "true")
     .trigger(availableNow=True)  # Processar todos os arquivos disponíveis agora
-    .toTable("workspace.risco_bronze.clientes_csv")
+    .toTable(f"{CATALOG}.bronze.clientes_csv")
 )
 
 # Aguardar conclusão
@@ -80,7 +87,7 @@ query_faturas = (df_faturas_csv.writeStream
     .option("checkpointLocation", checkpoint_faturas)
     .option("mergeSchema", "true")
     .trigger(availableNow=True)
-    .toTable("workspace.risco_bronze.faturas_csv")
+    .toTable(f"{CATALOG}.bronze.faturas_csv")
 )
 
 query_faturas.awaitTermination()
@@ -95,12 +102,12 @@ print("✅ Dados de faturas_manuais.csv ingeridos!")
 print("\n🔍 Validando dados ingeridos...\n")
 
 print("📊 Clientes CSV:")
-spark.sql("SELECT COUNT(*) as total FROM workspace.risco_bronze.clientes_csv").show()
-spark.sql("SELECT * FROM workspace.risco_bronze.clientes_csv LIMIT 5").show(truncate=False)
+spark.sql(f"SELECT COUNT(*) as total FROM {CATALOG}.bronze.clientes_csv").show()
+spark.sql(f"SELECT * FROM {CATALOG}.bronze.clientes_csv LIMIT 5").show(truncate=False)
 
 print("\n📊 Faturas CSV:")
-spark.sql("SELECT COUNT(*) as total FROM workspace.risco_bronze.faturas_csv").show()
-spark.sql("SELECT * FROM workspace.risco_bronze.faturas_csv LIMIT 5").show(truncate=False)
+spark.sql(f"SELECT COUNT(*) as total FROM {CATALOG}.bronze.faturas_csv").show()
+spark.sql(f"SELECT * FROM {CATALOG}.bronze.faturas_csv LIMIT 5").show(truncate=False)
 
 # COMMAND ----------
 
@@ -108,8 +115,8 @@ spark.sql("SELECT * FROM workspace.risco_bronze.faturas_csv LIMIT 5").show(trunc
 # MAGIC ## ✅ Auto Loader Configurado!
 # MAGIC 
 # MAGIC **Tabelas Criadas**:
-# MAGIC - ✅ `workspace.risco_bronze.clientes_csv`
-# MAGIC - ✅ `workspace.risco_bronze.faturas_csv`
+# MAGIC - ✅ `{CATALOG}.bronze.clientes_csv`
+# MAGIC - ✅ `{CATALOG}.bronze.faturas_csv`
 # MAGIC 
 # MAGIC **Vantagens do Auto Loader**:
 # MAGIC - 📥 Ingestão incremental automática

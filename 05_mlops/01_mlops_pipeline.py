@@ -77,7 +77,8 @@ print("✅ Bibliotecas importadas com sucesso")
 
 # DBTITLE 1,🔧 Parâmetros de Configuração
 # Configurações do Unity Catalog
-CATALOG = "credit_risk"
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
 SCHEMA_GOLD = "gold"
 
 # Tabelas

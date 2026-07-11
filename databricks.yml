@@ -1,0 +1,110 @@
+# Databricks Asset Bundle - AI Credit Risk Platform
+#
+# Uso:
+#   databricks bundle deploy -t dev   # faz upload dos notebooks e cria o job
+#   databricks bundle run credit_risk_pipeline -t dev   # roda o pipeline completo ponta a ponta
+#
+# Pré-requisitos: Databricks CLI configurado (`databricks configure`) e um workspace com
+# Unity Catalog habilitado. O parâmetro `catalog` é passado a cada notebook via widget
+# (default: "credit_risk") — troque em `variables.catalog.default` para usar outro nome.
+
+bundle:
+  name: ai-credit-risk-platform
+
+variables:
+  catalog:
+    description: Nome do catálogo Unity Catalog usado pelo pipeline
+    default: credit_risk
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+resources:
+  jobs:
+    credit_risk_pipeline:
+      name: "[${bundle.target}] AI Credit Risk Platform - Pipeline Completo"
+      tasks:
+        - task_key: setup_catalog
+          notebook_task:
+            notebook_path: ./01_setup/01_criar_catalogo_schemas.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: setup_permissoes
+          depends_on:
+            - task_key: setup_catalog
+          notebook_task:
+            notebook_path: ./01_setup/02_configurar_permissoes.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: ingestao_bronze
+          depends_on:
+            - task_key: setup_permissoes
+          notebook_task:
+            notebook_path: ./02_ingestion/01_popular_dados_completos.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: transformacao_silver
+          depends_on:
+            - task_key: ingestao_bronze
+          notebook_task:
+            notebook_path: ./03_feature_engineering/01_transformacao_silver.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: transformacao_gold
+          depends_on:
+            - task_key: transformacao_silver
+          notebook_task:
+            notebook_path: ./03_feature_engineering/02_transformacao_gold.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: feature_store_rfm
+          depends_on:
+            - task_key: transformacao_gold
+          notebook_task:
+            notebook_path: ./03_feature_engineering/03_feature_store_rfm.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: clustering_features_ml
+          depends_on:
+            - task_key: feature_store_rfm
+          notebook_task:
+            notebook_path: ./03_feature_engineering/04_clustering_features_ml.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: modelo_classificacao
+          depends_on:
+            - task_key: clustering_features_ml
+          notebook_task:
+            notebook_path: ./04_modeling/01_modelo_classificacao_risco.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: mlops_pipeline
+          depends_on:
+            - task_key: modelo_classificacao
+          notebook_task:
+            notebook_path: ./05_mlops/01_mlops_pipeline.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: monitoring_drift
+          depends_on:
+            - task_key: mlops_pipeline
+          notebook_task:
+            notebook_path: ./07_monitoring/01_drift_detection.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * MON"   # segundas-feiras, 6h — retreino/scoring semanal
+        timezone_id: "America/Sao_Paulo"
+        pause_status: PAUSED   # ative manualmente após validar a primeira execução

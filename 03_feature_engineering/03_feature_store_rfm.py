@@ -7,8 +7,8 @@
 # MAGIC %md
 # MAGIC # RFM Scoring - Recency, Frequency, Monetary
 # MAGIC
-# MAGIC **Input**: credit_risk.gold.features_agregadas, credit_risk.bronze.faturas  
-# MAGIC **Output**: credit_risk.gold.features_rfm
+# MAGIC **Input**: {CATALOG}.gold.features_agregadas, {CATALOG}.bronze.faturas  
+# MAGIC **Output**: {CATALOG}.gold.features_rfm
 # MAGIC
 # MAGIC **RFM Score** (1-5, sendo 5 o melhor):
 # MAGIC - **Recency**: Dias desde última fatura
@@ -20,14 +20,17 @@
 # DBTITLE 1,Carregar Dados
 from pyspark.sql.functions import *
 
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+CATALOG = dbutils.widgets.get("catalog")
+
 print("="*60)
 print("🔧 FASE 2.2 - RFM SCORING")
 print("="*60)
 print()
 
 # Carregar features agregadas
-df_features = spark.table("credit_risk.gold.features_agregadas")
-df_faturas = spark.table("credit_risk.bronze.faturas")
+df_features = spark.table(f"{CATALOG}.gold.features_agregadas")
+df_faturas = spark.table(f"{CATALOG}.bronze.faturas")
 
 print(f"✅ {df_features.count():,} clientes carregados")
 
@@ -75,8 +78,8 @@ print()
 
 # DBTITLE 1,Salvar Tabela RFM
 # Salvar
-print("💾 Salvando credit_risk.gold.features_rfm...")
-df_rfm.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("credit_risk.gold.features_rfm")
+print(f"💾 Salvando {CATALOG}.gold.features_rfm...")
+df_rfm.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{CATALOG}.gold.features_rfm")
 
 count_rfm = df_rfm.count()
 print(f"  ✅ Tabela criada!")
@@ -90,14 +93,14 @@ print()
 print("="*60)
 print("📊 DISTRIBUIÇÃO DE CATEGORIAS RFM")
 print("="*60)
-display(spark.table("credit_risk.gold.features_rfm").groupBy("categoria_rfm").count().orderBy("count", ascending=False))
+display(spark.table(f"{CATALOG}.gold.features_rfm").groupBy("categoria_rfm").count().orderBy("count", ascending=False))
 
 # COMMAND ----------
 
 # DBTITLE 1,Amostra de Dados
 # Amostra de dados
 print("📋 Amostra de Dados RFM:")
-display(spark.table("credit_risk.gold.features_rfm").select([
+display(spark.table(f"{CATALOG}.gold.features_rfm").select([
     "id_cliente", "nome", "porte",
     "recency_dias", "rfm_score", "categoria_rfm",
     "total_faturado_90d", "taxa_pagamento"

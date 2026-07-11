@@ -140,8 +140,10 @@ def gerar_nota_fiscal_pdf(
 
 print("📄 Gerando 10 PDFs de notas fiscais...\n")
 
-# Diretório de saída
-output_dir = "/Workspace/Users/valdomirovega@hotmail.com/ai-credit-risk-platform-databricks/02_ingestion/sample_data/notas_fiscais"
+# Diretório de saída derivado do próprio notebook (funciona em qualquer workspace/Repo/Git folder)
+notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+repo_root = "/Workspace" + "/".join(notebook_path.split("/")[:-2])
+output_dir = f"{repo_root}/02_ingestion/sample_data/notas_fiscais"
 
 # Dados de exemplo
 clientes_exemplo = [
