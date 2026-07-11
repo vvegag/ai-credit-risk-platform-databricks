@@ -76,9 +76,9 @@ SHOW SCHEMAS IN credit_risk;
 ```
 
 **Silver/Gold tables empty or stale** — re-run `03_feature_engineering/01_` through `04_` in order;
-each one depends on the previous (Bronze → Silver → Gold aggregates → RFM → clustering).
+each one depends on the previous (Bronze → Silver → Gold aggregates → RFM → clustering). 
 
 **Model performance looks off** — check the target distribution first
 (`SELECT categoria_risco, COUNT(*) FROM credit_risk.bronze.clientes GROUP BY categoria_risco`,
-should be roughly 70/20/10 for a fresh synthetic run), then check for drift via
+should be roughly 70/20/10 for a fresh synthetic run),  then check for drift via
 `07_monitoring/01_drift_detection.py`.
