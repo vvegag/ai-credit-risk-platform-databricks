@@ -53,7 +53,8 @@
 
 # DBTITLE 1,🗂️ Setup Volume para Documentos
 # Criar schema e volume para documentos
-catalog = "credit_risk"
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+catalog = dbutils.widgets.get("catalog")
 schema = "documentos"
 volume = "documentos_credito"
 
@@ -103,7 +104,7 @@ fake = Faker('pt_BR')
 print("📊 Carregando e enriquecendo dados...\n")
 
 # Clientes - enriquecer com dados sintéticos
-df_clientes = spark.table("credit_risk.bronze.clientes") \
+df_clientes = spark.table(f"{catalog}.bronze.clientes") \
     .withColumn("email", expr("concat('contato', id_cliente, '@empresa', id_cliente, '.com.br')")) \
     .withColumn("telefone", expr("concat('(11) 9', LPAD(CAST(FLOOR(rand() * 10000000) AS STRING), 8, '0'))")) \
     .withColumn("score_credito", spark_round(400 + rand() * 400, 0).cast("int")) \
@@ -113,11 +114,11 @@ df_clientes = spark.table("credit_risk.bronze.clientes") \
 print(f"✅ {df_clientes.count()} clientes carregados e enriquecidos")
 
 # Faturas
-df_faturas = spark.table("credit_risk.bronze.faturas").limit(200)
+df_faturas = spark.table(f"{catalog}.bronze.faturas").limit(200)
 print(f"✅ {df_faturas.count()} faturas carregadas")
 
 # Pagamentos
-df_pagamentos = spark.table("credit_risk.bronze.pagamentos").limit(150)
+df_pagamentos = spark.table(f"{catalog}.bronze.pagamentos").limit(150)
 print(f"✅ {df_pagamentos.count()} pagamentos carregados")
 
 print("\n✅ Dados carregados com sucesso!")
@@ -539,7 +540,7 @@ from tqdm import tqdm
 print("🚀 GERANDO DOCUMENTOS PDF\n")
 print("="*80)
 
-base_path = "/Volumes/credit_risk/documentos/documentos_credito"
+base_path = f"/Volumes/{catalog}/documentos/documentos_credito"
 
 # Limitar para primeiros 20 clientes para exemplo
 clientes_sample = clientes_pd.head(20)
@@ -632,7 +633,7 @@ for doc_tipo, docs in documentos_gerados.items():
 metadados_df = spark.createDataFrame(metadados_list)
 
 # Criar tabela Delta
-table_name = "credit_risk.documentos.metadata_documentos"
+table_name = f"{catalog}.documentos.metadata_documentos"
 
 metadados_df.write \
     .format("delta") \

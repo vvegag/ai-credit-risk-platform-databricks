@@ -48,10 +48,13 @@
 # COMMAND ----------
 
 # DBTITLE 1,📊 Carregar Metadados dos Documentos
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+catalog = dbutils.widgets.get("catalog")
+
 # Carregar metadados dos documentos gerados
 print("📊 Carregando metadados dos documentos...\n")
 
-df_metadata = spark.table("credit_risk.documentos.metadata_documentos")
+df_metadata = spark.table(f"{catalog}.documentos.metadata_documentos")
 
 print(f"✅ {df_metadata.count()} documentos encontrados\n")
 
@@ -62,7 +65,7 @@ df_metadata.groupBy("tipo_documento").count().show()
 # Converter para Pandas para facilitar iteração
 metadata_pd = df_metadata.toPandas()
 
-print(f"\n📁 Localização base: /Volumes/credit_risk/documentos/documentos_credito/")
+print(f"\n📁 Localização base: /Volumes/{catalog}/documentos/documentos_credito/")
 print(f"\n✅ Metadados carregados com sucesso!")
 
 # COMMAND ----------
@@ -100,7 +103,7 @@ print("✅ Função extrair_texto_pdf() criada")
 
 # Testar com um documento
 print("\n🧪 Testando extração...")
-teste_path = "/Volumes/credit_risk/documentos/documentos_credito/contratos/contrato_1.pdf"
+teste_path = f"/Volumes/{catalog}/documentos/documentos_credito/contratos/contrato_1.pdf"
 texto_teste = extrair_texto_pdf(teste_path)
 print(f"\n📝 Primeiros 500 caracteres extraídos:")
 print(texto_teste[:500] if texto_teste else "Erro na extração")
@@ -263,7 +266,7 @@ print(f"📊 DataFrame criado: {len(df_embeddings_pd)} linhas\n")
 df_embeddings_spark = spark.createDataFrame(df_embeddings_pd)
 
 # Criar tabela Delta
-table_name = "credit_risk.documentos.embeddings_documentos"
+table_name = f"{catalog}.documentos.embeddings_documentos"
 
 df_embeddings_spark.write \
     .format("delta") \
@@ -299,8 +302,8 @@ print("\n✅ Cliente Vector Search inicializado\n")
 
 # Configurações
 endpoint_name = "credit_risk_vector_endpoint"
-index_name = "credit_risk.documentos.credit_docs_vector_index"
-source_table = "credit_risk.documentos.embeddings_documentos"
+index_name = f"{catalog}.documentos.credit_docs_vector_index"
+source_table = f"{catalog}.documentos.embeddings_documentos"
 embedding_dimension = 768  # Dimensão do modelo mpnet
 embedding_column = "embedding"
 primary_key = "chunk_id"

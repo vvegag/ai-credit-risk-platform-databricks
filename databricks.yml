@@ -80,6 +80,8 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
 
+        # Os 3 modelos são independentes entre si (todos leem gold.features_ml) e rodam em
+        # paralelo — cada um só depende de clustering_features_ml, não um do outro.
         - task_key: modelo_classificacao
           depends_on:
             - task_key: clustering_features_ml
@@ -88,6 +90,24 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
 
+        - task_key: modelo_regressao
+          depends_on:
+            - task_key: clustering_features_ml
+          notebook_task:
+            notebook_path: ./04_modeling/02_modelo_regressao.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: modelo_forecast_cashflow
+          depends_on:
+            - task_key: clustering_features_ml
+          notebook_task:
+            notebook_path: ./04_modeling/03_modelo_forecast_cashflow.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        # MLOps é específico do classificador (retreino, drift, promoção Champion/Challenger) —
+        # depende só de modelo_classificacao, não dos outros dois modelos.
         - task_key: mlops_pipeline
           depends_on:
             - task_key: modelo_classificacao
@@ -101,6 +121,43 @@ resources:
             - task_key: mlops_pipeline
           notebook_task:
             notebook_path: ./07_monitoring/01_drift_detection.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        # RAG protótipo (FAISS local) — só precisa da camada Silver, roda em paralelo com a
+        # modelagem.
+        - task_key: rag_validacao_prototipo
+          depends_on:
+            - task_key: transformacao_silver
+          notebook_task:
+            notebook_path: ./06_rag_validation/01_rag_notas_fiscais.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        # RAG real (Databricks Vector Search): gera PDFs -> extrai/chunka/embeda -> indexa.
+        # Depende de clustering_features_ml porque o gerador de documentos também lê
+        # gold.features_ml, além das tabelas Bronze.
+        - task_key: rag_gerar_documentos
+          depends_on:
+            - task_key: clustering_features_ml
+          notebook_task:
+            notebook_path: ./10_rag_agent/notebooks/01_gerar_documentos_credito.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: rag_vector_search
+          depends_on:
+            - task_key: rag_gerar_documentos
+          notebook_task:
+            notebook_path: ./10_rag_agent/notebooks/02_vector_search_rag.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        - task_key: rag_agent_langchain
+          depends_on:
+            - task_key: rag_vector_search
+          notebook_task:
+            notebook_path: ./10_rag_agent/notebooks/03_rag_agent_langchain.py
             base_parameters:
               catalog: ${var.catalog}
 

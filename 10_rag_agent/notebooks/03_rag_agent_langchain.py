@@ -56,6 +56,9 @@ from sentence_transformers import SentenceTransformer
 from databricks.vector_search.client import VectorSearchClient
 import os
 
+dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
+catalog = dbutils.widgets.get("catalog")
+
 print("🔧 Configurando componentes...\n")
 
 # HF_TOKEN já deve estar configurado como variável de ambiente do cluster/secret scope
@@ -71,7 +74,7 @@ vsc = VectorSearchClient(disable_notice=True)
 
 # Configurações
 endpoint_name = "credit_risk_vector_endpoint"
-index_name = "credit_risk.documentos.credit_docs_vector_index"
+index_name = f"{catalog}.documentos.credit_docs_vector_index"
 
 print(f"✅ Vector Search conectado")
 print(f"   Endpoint: {endpoint_name}")

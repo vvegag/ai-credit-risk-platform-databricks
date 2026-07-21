@@ -156,9 +156,12 @@ databricks bundle deploy -t dev
 databricks bundle run credit_risk_pipeline -t dev
 ```
 
-This uploads the notebooks and creates a Job that runs the full pipeline end-to-end (setup → ingestion →
-feature engineering → modeling → monitoring), using the `catalog` variable defined in `databricks.yml`
-(default: `credit_risk`). See `databricks.yml` to change the catalog name or schedule.
+This uploads the notebooks and creates a Job that runs the full pipeline end-to-end: setup → ingestion →
+feature engineering → **all 3 models in parallel** (classification, regression, cashflow forecast) →
+MLOps (retrain/promote the classifier) → monitoring, plus **both RAG paths** (the FAISS prototype and
+the real Databricks Vector Search pipeline: PDF generation → chunking/embeddings → indexing → LangChain
+agent) running alongside modeling. Uses the `catalog` variable defined in `databricks.yml` (default:
+`credit_risk`). See `databricks.yml` for the full task DAG, or to change the catalog name/schedule.
 
 ### Option B — Manual setup
 
