@@ -58,13 +58,19 @@ Performance numbers depend on the specific synthetic data run — see [Results](
 
 **Medallion Architecture** with Delta Lake for ACID transactions and Unity Catalog for governance.
 
-### 🤖 RAG System for Document Validation
+### 🤖 RAG: Two Implementations (Prototype → Production)
 
-- **Document simulation**: invoice text materialized as `.txt` files on disk (stand-in for an OCR/parsing output), then read back from disk before embedding
-- **Embeddings**: Sentence-Transformers for semantic understanding (no chunking — each invoice is already a short, atomic text)
-- **Vector Search**: FAISS for fast similarity matching
-- **Business Rules**: Automated validation against contracts
-- **Workflow**: Auto-approve, flag for review, or reject
+**`06_rag_validation`** (prototype):
+- Document simulation: invoice text materialized as `.txt` files on disk, read back before embedding
+- Embeddings: Sentence-Transformers, indexed with local FAISS
+- Business rules: automated validation against contracts (auto-approve, flag, reject)
+
+**`10_rag_agent`** (real Databricks Vector Search):
+- Generates real PDF documents (credit contracts, bank statements, income proof) with `reportlab`
+- Extracts and chunks text (`pypdf`), embeds with Sentence-Transformers
+- Indexes in a real **Databricks Vector Search** endpoint (`credit_risk.documentos.credit_docs_vector_index`), synced from a Delta table via Change Data Feed
+- **LangChain agent** for conversational queries over the indexed documents
+- Modular Python package (`src/`) with its own tests (`tests/`) and a Model Serving deploy script (`deploy/`)
 
 ### 📈 Monitoring & Observability
 
@@ -108,6 +114,11 @@ ai-credit-risk-platform-databricks/
 │   └── 01_drift_detection.py           # KS-test data drift + prediction monitoring
 ├── 08_dashboards/exports/              # AI/BI dashboard exports (.lvdash.json)
 ├── 09_docs/                            # Architecture, data dictionary, usage guide
+├── 10_rag_agent/                       # RAG with real Databricks Vector Search (see note below)
+│   ├── notebooks/                      # Document generation, indexing, LangChain agent
+│   ├── src/                            # Importable package: config, embeddings, vector_search, rag_agent
+│   ├── deploy/                         # Model serving deployment script
+│   └── tests/                          # Unit tests
 ├── .gitignore
 ├── databricks.yml                      # Databricks Asset Bundle (job definition, catalog variable)
 ├── requirements.txt
@@ -115,11 +126,16 @@ ai-credit-risk-platform-databricks/
 └── README.md
 ```
 
-> ⚠️ **RAG note**: `06_rag_validation` is a **prototype** — it simulates invoice text from existing
-> records, writes each one as a `.txt` file under `02_ingestion/sample_data/notas_fiscais_txt/`
-> (stand-in for a "physical" document already parsed), reads it back from disk, and indexes it with
-> a local FAISS index — not a real PDF/OCR pipeline or Databricks Vector Search. See the Roadmap
-> below for what a production version would add.
+> ⚠️ **Two RAG implementations, different maturity**:
+> - `06_rag_validation` is a **prototype** — it simulates invoice text from existing records, writes
+>   each one as a `.txt` file under `02_ingestion/sample_data/notas_fiscais_txt/` (stand-in for a
+>   "physical" document already parsed), reads it back from disk, and indexes it with a **local FAISS**
+>   index — not a real PDF/OCR pipeline or managed vector search.
+> - `10_rag_agent` is the **real implementation**: it generates actual PDF documents (credit contracts,
+>   bank statements, income proof), extracts and chunks their text, embeds them, and indexes them in a
+>   real **Databricks Vector Search** endpoint (`credit_risk.documentos.credit_docs_vector_index`), with
+>   a LangChain agent for conversational queries. `06_rag_validation` was kept as-is to document the
+>   "quick prototype vs. production" progression within the same repo.
 
 ---
 
@@ -205,18 +221,24 @@ Exact metric values depend on the specific synthetic run — check the MLflow ex
 ### ✅ Implemented in this repo
 - [x] Medallion architecture (Bronze → Silver → Gold), 100% PySpark-native ETL
 - [x] 3 ML models: classification (XGBoost + SHAP), regression, cashflow forecast (Prophet)
-- [x] MLOps pipeline: retraining, drift checks, metrics/alerts tables, model versioning (`05_mlops/01_mlops_pipeline.py`)
+- [x] **Unity Catalog Model Registry** with `Champion`/`Challenger` aliases (`mlflow.xgboost.log_model` +
+      `MlflowClient.set_registered_model_alias`) — not a legacy workspace registry, not a loose pickle file
+- [x] MLOps pipeline: retraining, drift checks, real production metrics (computed from actual predictions,
+      not simulated data), alerts, Champion promotion (`05_mlops/01_mlops_pipeline.py`)
+- [x] Closed consumption loop: classifier writes `gold.model_predictions` → MLOps pipeline reads it for
+      real metrics/alerts → `07_monitoring/` and dashboards/Genie read the same table
 - [x] Standalone KS-test drift detection + health checks (`07_monitoring/01_drift_detection.py`)
 - [x] Delta maintenance routine: `OPTIMIZE`/`ZORDER`/`VACUUM` (`01_setup/03_manutencao_delta.py`)
 - [x] Databricks Asset Bundle (`databricks.yml`) orchestrating the full pipeline as a scheduled Job
-- [x] RAG-style invoice validation — **prototype** (see note above), not yet backed by Vector Search
+- [x] RAG with real **Databricks Vector Search** (`10_rag_agent/`) — PDF generation, chunking, embeddings,
+      managed vector index, LangChain conversational agent
+- [x] RAG prototype (`06_rag_validation/`) — local FAISS, kept to document the prototype→production path
 - [x] AI/BI executive dashboard with filters (exports in `08_dashboards/`)
 
 ### 🚧 Documented as future work (not built in this repo)
 - [ ] **Genie Space** for self-service natural-language analytics
 - [ ] **Slack/email alerts** wired to the drift/alerts tables already produced by `05_mlops/01_mlops_pipeline.py`
-- [ ] **Real-time Model Serving** endpoint for the registered classifier
-- [ ] Production RAG: real PDF/OCR parsing + Databricks Vector Search instead of local FAISS
+- [ ] **Real-time Model Serving** endpoint serving the Champion alias directly (`models:/.../@Champion`)
 - [ ] A/B testing for collection strategies
 - [ ] CRM integration (Salesforce), Next Best Action, Lifetime Value (LTV) prediction
 

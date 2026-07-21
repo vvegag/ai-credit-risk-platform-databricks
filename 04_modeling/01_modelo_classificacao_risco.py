@@ -64,6 +64,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
+from datetime import datetime
 warnings.filterwarnings('ignore')
 
 # PySpark
@@ -113,6 +114,12 @@ print(f"SHAP version: {shap.__version__}")
 # DBTITLE 1,Carregar Tabela de Features
 dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
 CATALOG = dbutils.widgets.get("catalog")
+
+# Mesmo nome de modelo usado por 05_mlops/01_mlops_pipeline.py — uma única entrada
+# no UC Model Registry, não dois modelos desencontrados com nomes diferentes.
+MODEL_NAME = "credit_risk_classifier"
+MODEL_REGISTRY_NAME = f"{CATALOG}.gold.{MODEL_NAME}"
+mlflow.set_registry_uri("databricks-uc")
 
 # Carregar dados da tabela gold (cache: reutilizado em count/describe/limit/toPandas abaixo)
 df_spark = spark.table(f"{CATALOG}.gold.features_ml").cache()
@@ -401,13 +408,17 @@ params = {
     'objective': 'binary:logistic'
 }
 
-# Criar e treinar modelo
+# Criar e treinar modelo dentro de uma run do MLflow (necessário para depois
+# registrar o modelo no UC Model Registry com o histórico de parâmetros/métricas)
 print("🚀 Iniciando treinamento do XGBoost...")
 print(f"   - Train samples: {X_train.shape[0]:,}")
 print(f"   - Test samples: {X_test.shape[0]:,}")
 print(f"   - Features: {X_train.shape[1]}")
 print(f"   - Class ratio: {train_class_ratio:.2f}:1")
 print("")
+
+mlflow_run = mlflow.start_run(run_name=f"classificacao_risco_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+mlflow.log_params(params)
 
 model = XGBClassifier(**params)
 model.fit(
@@ -738,21 +749,36 @@ print(f"   - Optimal F1: {best_f1:.4f}")
 # COMMAND ----------
 
 # DBTITLE 1,Registrar Modelo no MLflow Model Registry
-# Salvar modelo localmente usando pickle
-import pickle
-import os
+# Log de métricas/modelo na run aberta em "Treinar Modelo XGBoost", e registro no
+# Unity Catalog Model Registry (mlflow.xgboost.log_model com registered_model_name,
+# não um pickle solto em /tmp). Mesmo MODEL_REGISTRY_NAME usado por
+# 05_mlops/01_mlops_pipeline.py — uma única entrada no registry, não dois modelos
+# desencontrados.
+mlflow.log_metrics({
+    'accuracy': accuracy, 'precision': precision, 'recall': recall,
+    'f1_score': f1, 'auc_roc': roc_auc,
+})
+signature = infer_signature(X_train, model.predict(X_train))
+model_info = mlflow.xgboost.log_model(
+    model, "model",
+    signature=signature,
+    registered_model_name=MODEL_REGISTRY_NAME,
+)
+mlflow.end_run()
 
-model_name = "credit_risk_xgboost_classifier"
-model_path = '/tmp/xgboost_model.pkl'
+print(f"✅ Modelo registrado no UC Model Registry: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version}")
 
-# Salvar modelo
-with open(model_path, 'wb') as f:
-    pickle.dump(model, f)
-
-print(f"✅ Modelo salvo localmente!")
-print(f"📦 Nome do modelo: {model_name}")
-print(f"💾 Localização: {model_path}")
-print(f"📄 Tamanho do arquivo: {os.path.getsize(model_path)/1024:.2f} KB")
+# Bootstrap: se este é o primeiro modelo registrado (ainda não existe alias Champion),
+# promove-o como Champion inicial. Promoções seguintes (retreino com métrica melhor)
+# são feitas por 05_mlops/01_mlops_pipeline.py, não aqui.
+from mlflow.tracking import MlflowClient
+_client = MlflowClient()
+try:
+    _client.get_model_version_by_alias(MODEL_REGISTRY_NAME, "Champion")
+    print("ℹ️ Já existe um Champion registrado — mantendo-o (retreino é feito por 05_mlops/)")
+except Exception:
+    _client.set_registered_model_alias(MODEL_REGISTRY_NAME, "Champion", model_info.registered_model_version)
+    print(f"🏆 Nenhum Champion prévio — v{model_info.registered_model_version} promovido a Champion inicial")
 
 # COMMAND ----------
 
@@ -769,9 +795,14 @@ print(f"📄 Tamanho do arquivo: {os.path.getsize(model_path)/1024:.2f} KB")
 X_full = pd.concat([X_train, X_test], axis=0)
 y_full = pd.concat([y_train, y_test], axis=0)
 
-# Fazer predições para todo o dataset
-y_full_pred = model.predict(X_full)
-y_full_pred_proba = model.predict_proba(X_full)[:, 1]
+# Pontuar com o modelo Champion do UC Model Registry (flavor nativo do xgboost,
+# não pyfunc genérico, para manter acesso a predict_proba) — não com o objeto
+# `model` recém-treinado em memória. Isso garante que credit_risk.gold.model_predictions
+# sempre reflita o modelo realmente em produção (o mesmo que 05_mlops/ promove),
+# mesmo que este notebook seja reexecutado sem que o retreino tenha sido aprovado.
+champion_model = mlflow.xgboost.load_model(f"models:/{MODEL_REGISTRY_NAME}@Champion")
+y_full_pred = champion_model.predict(X_full)
+y_full_pred_proba = champion_model.predict_proba(X_full)[:, 1]
 
 # Recuperar informações originais (id_cliente, perfil_comportamental)
 df_predictions = df_pd[['id_cliente', 'perfil_comportamental']].copy()
@@ -870,7 +901,7 @@ print("  3. SHAP values fornecem explicabilidade para cada predição")
 print("  4. O threshold pode ser ajustado conforme o trade-off desejado entre FP e FN")
 
 print("\n📦 ARTEFATOS GERADOS:")
-print(f"  • Modelo salvo: {model_name} ({model_path})")
+print(f"  • Modelo registrado: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version} (UC Model Registry)")
 print(f"  • Tabela de predições: {table_name}")
 print(f"  • Plots e métricas: /tmp/ (10 arquivos)")
 print(f"  • Feature importance: /tmp/feature_importance.csv")

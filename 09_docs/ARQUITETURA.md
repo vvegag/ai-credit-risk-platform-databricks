@@ -60,10 +60,37 @@ Cleans and types Bronze data, joins `faturas` with `pagamentos`, and derives `va
 | `02_modelo_regressao` | Monetary value at risk | XGBoost Regressor |
 | `03_modelo_forecast_cashflow` | 90-day cashflow forecast | Prophet |
 
-### 5. MLOps (`05_mlops/01_mlops_pipeline.py`) and Monitoring (`07_monitoring/`)
+### 5. Model Registry (Unity Catalog)
+Both `04_modeling/01_modelo_classificacao_risco.py` and `05_mlops/01_mlops_pipeline.py` register
+to the **same** Unity Catalog Model Registry entry (`credit_risk.gold.credit_risk_classifier`) —
+via `mlflow.xgboost.log_model(..., registered_model_name=...)`, not a legacy workspace registry
+and not a loose pickle file. Promotion uses `Champion`/`Challenger` **aliases**
+(`MlflowClient.set_registered_model_alias`), not raw version numbers:
+- `04_modeling/01_` bootstraps the **first** Champion on a fresh catalog (no-op if one already exists).
+- `05_mlops/01_mlops_pipeline.py` owns retraining and promotion: it compares the new model's metrics
+  against the *current Champion's* real metrics (pulled from the registry, not hardcoded), and on
+  approval promotes the new version to Champion while the previous Champion steps down to Challenger
+  — a one-step rollback path, not a full A/B framework.
+- Both notebooks score `credit_risk.gold.model_predictions` by loading `models:/.../@Champion`, so the
+  predictions table always reflects whichever model is actually promoted, not whatever was last trained
+  in memory.
+
+### 6. MLOps (`05_mlops/01_mlops_pipeline.py`) and Monitoring (`07_monitoring/`)
 Two complementary layers: a fuller MLOps pipeline that retrains, checks drift, and logs
 metrics/alerts/versions to dedicated Gold tables on every run; and a lightweight, standalone
-KS-test drift/health-check notebook for quick, ad-hoc inspection.
+KS-test drift/health-check notebook for quick, ad-hoc inspection. Production metrics in the MLOps
+pipeline are computed from the **real** `gold.model_predictions` table (which already carries the
+ground-truth label `perfil_real`) — not simulated with `np.random`.
+
+### 7. RAG (`06_rag_validation/` and `10_rag_agent/`)
+Two implementations at different maturity levels, kept side by side on purpose:
+- `06_rag_validation/01_rag_notas_fiscais.py` — **prototype**: simulated invoice text written to
+  `.txt` files, local FAISS index.
+- `10_rag_agent/` — **real Databricks Vector Search**: generates actual PDFs (`reportlab`), extracts/
+  chunks text (`pypdf`), embeds, and syncs to a managed Vector Search index
+  (`credit_risk.documentos.credit_docs_vector_index`) via Change Data Feed on the underlying Delta
+  table. Includes a LangChain agent (`src/rag_agent.py`) for conversational retrieval and a Model
+  Serving deploy script (`deploy/model_serving.py`).
 
 ---
 
