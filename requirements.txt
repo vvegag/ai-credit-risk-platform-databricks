@@ -9,3 +9,10 @@ faiss-cpu
 scipy
 seaborn==0.13.0
 reportlab
+pillow
+faker
+pypdf
+langchain
+langchain-community
+langchain-databricks
+databricks-vectorsearch
