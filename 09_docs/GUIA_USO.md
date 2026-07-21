@@ -68,6 +68,36 @@ into the scheduled Job defined in `databricks.yml`.
 
 ---
 
+## 🔀 Switching Databricks Accounts/Workspaces
+
+The project was built to be account-agnostic on purpose — every table reference is parameterized
+via the `catalog` widget, there are no hardcoded personal paths, and `databricks.yml` deploys the
+whole pipeline as a single Job. This matters in practice if you study/experiment across multiple
+Databricks accounts (e.g. a Free Edition workspace and a student/trial workspace with separate
+compute limits) and need to move between them when one runs out of credits.
+
+**GitHub is the source of truth, not any single Databricks account.** Nothing important should
+live only inside a workspace:
+
+1. Before switching accounts, make sure your latest code is committed and pushed (`git push`).
+   Anything uncommitted is the only thing you can actually lose.
+2. On the new account: clone/pull the repo into a Databricks Repo, then run:
+   ```bash
+   databricks bundle deploy -t dev
+   databricks bundle run credit_risk_pipeline -t dev
+   ```
+   This recreates the catalog, regenerates the synthetic data, retrains all 3 models, registers
+   them in the new account's Unity Catalog Model Registry, and rebuilds the RAG Vector Search
+   index — all from scratch, in one command.
+3. Don't try to migrate MLflow experiments, registered models, or Delta tables between accounts —
+   it's not worth the effort. Everything here is synthetic and fully reproducible; re-running the
+   pipeline on the new account is faster and cleaner than exporting/importing state.
+4. Double-check the actual credit/compute policy of each account type before relying on it (Free
+   Edition, trial, student/academic access, and Community Edition all have different rules) — the
+   assumption that "credits reset every 24h" may only hold for one specific plan.
+
+---
+
 ## 🛠️ Troubleshooting
 
 **Table not found** — confirm the `catalog` widget matches where you actually ran setup:
