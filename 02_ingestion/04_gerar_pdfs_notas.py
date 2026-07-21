@@ -149,6 +149,9 @@ notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext(
 repo_root = "/Workspace" + "/".join(notebook_path.split("/")[:-2])
 output_dir = f"{repo_root}/02_ingestion/sample_data/notas_fiscais"
 
+# Pasta gitignored (só os .pdf são ignorados, não o diretório) — precisa criar em clone novo
+os.makedirs(output_dir, exist_ok=True)
+
 # Dados de exemplo
 clientes_exemplo = [
     {"nome": "Alpha Tech Corp", "cnpj": "12.345.678/0001-90"},
