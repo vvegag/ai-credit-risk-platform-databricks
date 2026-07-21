@@ -20,6 +20,11 @@ notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext(
 repo_root = "/Workspace" + "/".join(notebook_path.split("/")[:-2])
 csv_path = f"{repo_root}/02_ingestion/sample_data/csvs/"
 
+# Checkpoints do Auto Loader precisam ficar num Volume do Unity Catalog, não em DBFS root
+# (workspaces com "Public DBFS root" desabilitado bloqueiam escrita em /tmp, /dbfs, etc.)
+spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.bronze.checkpoints")
+checkpoints_root = f"/Volumes/{CATALOG}/bronze/checkpoints"
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -30,7 +35,7 @@ csv_path = f"{repo_root}/02_ingestion/sample_data/csvs/"
 print("📥 Configurando Auto Loader para clientes_manuais.csv...\n")
 
 # Checkpoint location
-checkpoint_clientes = "/tmp/autoloader_checkpoints/clientes_csv"
+checkpoint_clientes = f"{checkpoints_root}/clientes_csv"
 
 # Ler com Auto Loader
 df_clientes_csv = (spark.readStream
@@ -75,7 +80,7 @@ print("✅ Dados de clientes_manuais.csv ingeridos!")
 
 print("📥 Configurando Auto Loader para faturas_manuais.csv...\n")
 
-checkpoint_faturas = "/tmp/autoloader_checkpoints/faturas_csv"
+checkpoint_faturas = f"{checkpoints_root}/faturas_csv"
 
 df_faturas_csv = (spark.readStream
     .format("cloudFiles")

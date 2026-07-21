@@ -18,6 +18,7 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+.claude/
 
 # Artefatos gerados localmente (não versionar binários grandes)
 # 02_ingestion/sample_data/notas_fiscais/*.pdf
