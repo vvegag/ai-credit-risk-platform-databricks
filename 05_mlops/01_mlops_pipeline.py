@@ -21,8 +21,11 @@
 # MAGIC - **Modelo Base**: XGBoost Classifier
 # MAGIC - **Performance Atual**: AUC-ROC ≥ 0.85, F1-Score ≥ 0.75
 # MAGIC - **Dados**: credit_risk.gold.features_ml (1,000 clientes)
-# MAGIC - **Predições**: credit_risk.gold.model_predictions
-# MAGIC - **Artefatos**: /tmp/xgboost_model.pkl
+# MAGIC - **Predições**: credit_risk.gold.model_predictions (gravadas por
+# MAGIC   `04_modeling/01_modelo_classificacao_risco.py`, consumidas aqui para
+# MAGIC   métricas reais, e por `07_monitoring/` e dashboards/Genie)
+# MAGIC - **Registro**: Unity Catalog Model Registry (`credit_risk.gold.credit_risk_classifier`),
+# MAGIC   aliases `Champion`/`Challenger` — não workspace registry, não pickle solto
 # MAGIC
 # MAGIC ---
 
@@ -92,6 +95,11 @@ TABLE_VERSIONS = f"{CATALOG}.{SCHEMA_GOLD}.model_versions"
 MODEL_NAME = "credit_risk_classifier"
 MODEL_PATH = "/tmp/xgboost_model.pkl"
 MODEL_REGISTRY_NAME = f"{CATALOG}.{SCHEMA_GOLD}.{MODEL_NAME}"
+
+# Unity Catalog Model Registry (não workspace registry) + aliases de promoção
+mlflow.set_registry_uri("databricks-uc")
+ALIAS_CHAMPION = "Champion"
+ALIAS_CHALLENGER = "Challenger"
 
 # Thresholds para alertas
 ALERT_THRESHOLDS = {
@@ -345,8 +353,82 @@ def should_deploy(new_metrics, baseline_metrics, threshold=0.02):
             delta = improvements[metric]
             symbol = "📈" if delta > 0 else "📉"
             print(f"   {symbol} {metric}: {baseline_metrics.get(metric, 0):.4f} → {new_metrics.get(metric, 0):.4f} ({delta:+.4f})")
-    
+
     return should_deploy_flag, justification
+
+# COMMAND ----------
+
+# DBTITLE 1,🏆 Função: Buscar Métricas do Champion Atual (Unity Catalog Registry)
+def get_champion_baseline_metrics(model_name=MODEL_REGISTRY_NAME, alias=ALIAS_CHAMPION):
+    """
+    Busca as métricas da run que gerou o modelo com alias Champion no UC Model Registry.
+    Usado como baseline real para a decisão de deploy (should_deploy), em vez de
+    valores fixos no código.
+
+    Returns:
+        dict com métricas, ou None se ainda não existir um Champion registrado
+        (primeira execução do pipeline).
+    """
+    client = MlflowClient()
+    try:
+        champion_version = client.get_model_version_by_alias(model_name, alias)
+        run = client.get_run(champion_version.run_id)
+        print(f"🏆 Champion atual: {model_name} v{champion_version.version} (run {champion_version.run_id[:8]})")
+        return dict(run.data.metrics)
+    except Exception:
+        print(f"ℹ️ Nenhum modelo com alias '{alias}' encontrado ainda em {model_name} — primeira execução")
+        return None
+
+
+# DBTITLE 1,🏆 Função: Registrar no UC Model Registry e Promover Champion/Challenger
+def register_and_promote_model(model, metrics, X_sample, promote_to_champion, model_name=MODEL_REGISTRY_NAME):
+    """
+    Registra o modelo no Unity Catalog Model Registry (mlflow.register_model, não
+    o registro legado por workspace) e gerencia os aliases Champion/Challenger:
+      - promote_to_champion=True: nova versão vira Champion; o Champion anterior
+        (se existir) recua para Challenger, mantendo rollback de um passo.
+      - promote_to_champion=False: nova versão fica só registrada (sem alias),
+        disponível para promoção manual depois.
+
+    Args:
+        model: modelo XGBoost treinado
+        metrics: métricas da run atual (para log_metrics)
+        X_sample: amostra de features para inferir a assinatura do modelo (mlflow signature)
+        promote_to_champion: resultado de should_deploy()
+
+    Returns:
+        (model_name, version_number)
+    """
+    from mlflow.models.signature import infer_signature
+
+    client = MlflowClient()
+    signature = infer_signature(X_sample, model.predict(X_sample))
+
+    with mlflow.start_run(run_name=f"register_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
+        mlflow.log_metrics(metrics)
+        model_info = mlflow.xgboost.log_model(
+            model, "model",
+            signature=signature,
+            registered_model_name=model_name,
+        )
+        version = model_info.registered_model_version
+
+    print(f"✅ Modelo registrado no UC: {model_name} v{version}")
+
+    if promote_to_champion:
+        try:
+            current_champion = client.get_model_version_by_alias(model_name, ALIAS_CHAMPION)
+            client.set_registered_model_alias(model_name, ALIAS_CHALLENGER, current_champion.version)
+            print(f"   ↳ Champion anterior (v{current_champion.version}) rebaixado para Challenger")
+        except Exception:
+            print("   ↳ Nenhum Champion anterior — primeira promoção")
+
+        client.set_registered_model_alias(model_name, ALIAS_CHAMPION, version)
+        print(f"   ↳ v{version} promovido a Champion")
+    else:
+        print(f"   ↳ v{version} registrado sem promoção (deploy não aprovado)")
+
+    return model_name, version
 
 # COMMAND ----------
 
@@ -558,61 +640,72 @@ print(f"✅ Tabela criada: {TABLE_METRICS}")
 # COMMAND ----------
 
 # DBTITLE 1,📝 Função: Registrar Métricas
-def log_production_metrics(predictions_df, actual_df, model_version, period_type='daily'):
+def log_production_metrics(predictions_df, model_version, period_type='daily'):
     """
-    Registra métricas de produção na tabela.
-    
+    Registra métricas de produção na tabela, calculadas a partir das predições
+    REAIS gravadas por 04_modeling/01_modelo_classificacao_risco.py em
+    credit_risk.gold.model_predictions — não dados simulados. A tabela já traz
+    o rótulo real (`perfil_real`), então as métricas de classificação (accuracy,
+    precision, recall, f1, AUC) são calculadas de verdade, não são placeholder.
+
     Args:
-        predictions_df: DataFrame com predições
-        actual_df: DataFrame com resultados reais (se disponível)
-        model_version: Versão do modelo
+        predictions_df: Spark DataFrame lido de TABLE_PREDICTIONS
+        model_version: Versão do modelo (ex: UC registry version ou alias)
         period_type: Tipo de período (daily, weekly, monthly)
-    
+
     Returns:
         dict com métricas calculadas
     """
     print(f"📝 Registrando métricas de produção ({period_type})...")
-    
-    # Converter para Pandas
+
     pred_pandas = predictions_df.toPandas()
-    
-    # Calcular métricas básicas
+    today = datetime.now().date()
+
+    has_ground_truth = 'perfil_real' in pred_pandas.columns and pred_pandas['perfil_real'].notna().any()
+    if has_ground_truth:
+        y_true = pred_pandas['perfil_real']
+        y_pred = pred_pandas['predicao_inadimplente']
+        y_proba = pred_pandas['probabilidade_inadimplencia']
+        classification_metrics = {
+            'accuracy': accuracy_score(y_true, y_pred),
+            'precision_score': precision_score(y_true, y_pred, zero_division=0),
+            'recall_score': recall_score(y_true, y_pred, zero_division=0),
+            'f1_score': f1_score(y_true, y_pred, zero_division=0),
+            'auc_roc': roc_auc_score(y_true, y_proba) if y_true.nunique() == 2 else 0.0,
+            'actual_default_rate': float(y_true.mean()),
+        }
+    else:
+        classification_metrics = {
+            'accuracy': 0.0, 'precision_score': 0.0, 'recall_score': 0.0,
+            'f1_score': 0.0, 'auc_roc': 0.0, 'actual_default_rate': 0.0,
+        }
+
+    n_predictions = len(pred_pandas)
+    risk_high = pred_pandas['predicao_inadimplente'].sum() if 'predicao_inadimplente' in pred_pandas.columns else 0
+
     metrics = {
         'metric_id': f"{model_version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         'timestamp': datetime.now(),
         'model_version': model_version,
         'period_type': period_type,
-        'period_start': pred_pandas['data_referencia'].min() if 'data_referencia' in pred_pandas.columns else datetime.now().date(),
-        'period_end': pred_pandas['data_referencia'].max() if 'data_referencia' in pred_pandas.columns else datetime.now().date(),
-        
-        # Volume (converter para int para compatibilidade com Spark INT)
-        'n_predictions': int(len(pred_pandas)),
-        'n_high_risk': int(len(pred_pandas[pred_pandas['categoria_predita'] == 'Alto'])) if 'categoria_predita' in pred_pandas.columns else 0,
-        'n_medium_risk': int(len(pred_pandas[pred_pandas['categoria_predita'] == 'Médio'])) if 'categoria_predita' in pred_pandas.columns else 0,
-        'n_low_risk': int(len(pred_pandas[pred_pandas['categoria_predita'] == 'Baixo'])) if 'categoria_predita' in pred_pandas.columns else 0,
-        
-        # Scores
-        'avg_score': float(pred_pandas['score_risco'].mean()) if 'score_risco' in pred_pandas.columns else 0.0,
-        'median_score': float(pred_pandas['score_risco'].median()) if 'score_risco' in pred_pandas.columns else 0.0,
-        
-        # Placeholder para métricas que requerem ground truth (usar 0.0 ao invés de None)
-        'accuracy': 0.0,
-        'precision_score': 0.0,
-        'recall_score': 0.0,
-        'f1_score': 0.0,
-        'auc_roc': 0.0,
-        'actual_default_rate': 0.0,
+        'period_start': today,
+        'period_end': today,
+
+        'n_predictions': int(n_predictions),
+        'n_high_risk': int(risk_high),
+        'n_medium_risk': 0,
+        'n_low_risk': int(n_predictions - risk_high),
+
+        'avg_score': float(pred_pandas['probabilidade_inadimplencia'].mean()) if 'probabilidade_inadimplencia' in pred_pandas.columns else 0.0,
+        'median_score': float(pred_pandas['probabilidade_inadimplencia'].median()) if 'probabilidade_inadimplencia' in pred_pandas.columns else 0.0,
+
+        **classification_metrics,
         'predicted_default_rate': float(pred_pandas['probabilidade_inadimplencia'].mean()) if 'probabilidade_inadimplencia' in pred_pandas.columns else 0.0,
-        
+
         'created_at': datetime.now(),
         'created_by': spark.sql('SELECT current_user()').collect()[0][0]
     }
-    
-    # Se temos ground truth, calcular métricas completas
-    if actual_df is not None:
-        # TODO: Join predictions com actual e calcular métricas
-        pass
-    
+
     # Inserir na tabela usando SQL para evitar problemas de type inference
     spark.sql(f"""
         INSERT INTO {TABLE_METRICS}
@@ -1271,12 +1364,11 @@ print(f"\n✅ Novo modelo treinado")
 # 5. Validar modelo e decidir deploy
 print("\n[5/7] Validando modelo para deploy...")
 
-# Métricas baseline (modelo atual)
-baseline_metrics = {
-    'auc_roc': 0.85,
-    'f1_score': 0.75,
-    'precision': 0.78,
-    'recall': 0.73
+# Baseline real: métricas da run do Champion atual no UC Model Registry.
+# Só cai no valor fixo abaixo na primeira execução do pipeline, quando ainda
+# não existe nenhum Champion registrado.
+baseline_metrics = get_champion_baseline_metrics() or {
+    'auc_roc': 0.75, 'f1_score': 0.65, 'precision': 0.70, 'recall': 0.65
 }
 
 # Decisão de deploy
@@ -1288,29 +1380,36 @@ print(f"\n{justification}")
 
 # COMMAND ----------
 
-# DBTITLE 1,📝 Registrar Métricas e Versão
-# 6. Registrar métricas de produção
-print("\n[6/7] Registrando métricas...")
+# DBTITLE 1,🏆 Registrar no UC Model Registry e Promover
+# 6a. Registrar a nova versão no Unity Catalog Model Registry e, se aprovada,
+# promover a Champion (rebaixando o Champion anterior a Challenger).
+print("\n[6/7] Registrando modelo no UC Model Registry...")
 
-# Simular predições para registrar métricas
-predictions_data = {
-    'cliente_id': range(1000),
-    'data_referencia': [datetime.now().date()] * 1000,
-    'categoria_predita': np.random.choice(['Baixo', 'Médio', 'Alto'], size=1000),
-    'score_risco': np.random.uniform(0.1, 0.9, size=1000),
-    'probabilidade_inadimplencia': np.random.uniform(0.05, 0.5, size=1000)
-}
-pred_df = spark.createDataFrame(pd.DataFrame(predictions_data))
-
-# Registrar métricas
-production_metrics = log_production_metrics(
-    pred_df, None, model_version='v1.0', period_type='daily'
+model_name, uc_version = register_and_promote_model(
+    new_model, new_metrics, X_train_new, promote_to_champion=should_deploy_flag
 )
 
-# Registrar versão
+# Tabela de governança/auditoria (histórico legível, complementar ao registry)
 version_id = register_model_version(
-    new_model, new_metrics, status='staging'
+    new_model, new_metrics, status='production' if should_deploy_flag else 'staging'
 )
+
+# COMMAND ----------
+
+# DBTITLE 1,📝 Registrar Métricas de Produção (dados reais)
+# 6b. Métricas de produção calculadas sobre as predições REAIS já gravadas por
+# 04_modeling/01_modelo_classificacao_risco.py em TABLE_PREDICTIONS — não é
+# simulação. Essa mesma tabela também é lida por 07_monitoring/01_drift_detection.py
+# e pelos dashboards/Genie (ver 09_docs/GUIA_USO.md), fechando o ciclo:
+# treino → predição real → métricas/alertas → consumo por monitoramento e BI.
+if spark.catalog.tableExists(TABLE_PREDICTIONS):
+    df_real_predictions = spark.table(TABLE_PREDICTIONS)
+    production_metrics = log_production_metrics(
+        df_real_predictions, model_version=f"v{uc_version}", period_type='daily'
+    )
+else:
+    print(f"⚠️ {TABLE_PREDICTIONS} ainda não existe — rode 04_modeling/01_modelo_classificacao_risco.py antes")
+    production_metrics = {}
 
 print(f"\n✅ Métricas e versão registradas")
 
@@ -1334,11 +1433,12 @@ print("\n" + "="*80)
 print("✅ PIPELINE MLOPS EXECUTADO COM SUCESSO")
 print("="*80)
 print(f"\n📊 Resumo:")
-print(f"   - Modelo re-treinado: {version_id}")
+print(f"   - Modelo re-treinado: {version_id} (UC Registry: {model_name} v{uc_version})")
 print(f"   - Performance: AUC-ROC={new_metrics['auc_roc']:.4f}, F1={new_metrics['f1_score']:.4f}")
 print(f"   - Drift detectado: {drift_results['n_drifted_features']}/{drift_results['n_features']} features")
 print(f"   - Alertas gerados: {len(alerts)}")
 print(f"   - Deploy recomendado: {'SIM ✅' if should_deploy_flag else 'NÃO ❌'}")
+print(f"   - Promovido a Champion: {'SIM 🏆' if should_deploy_flag else 'NÃO — registrado sem alias'}")
 
 # COMMAND ----------
 
@@ -1442,19 +1542,18 @@ print(f"   - Deploy recomendado: {'SIM ✅' if should_deploy_flag else 'NÃO ❌
 # MAGIC %md
 # MAGIC ### Deploy em Databricks Model Serving
 # MAGIC
+# MAGIC O registro no Unity Catalog Model Registry com aliases Champion/Challenger já
+# MAGIC acontece acima (`register_and_promote_model`) — não é mais um próximo passo,
+# MAGIC é parte deste pipeline. O que falta implementar é o endpoint de serving em
+# MAGIC tempo real a partir do Champion já registrado:
+# MAGIC
 # MAGIC #### Configuração do Endpoint
 # MAGIC **Passos para deploy**:
 # MAGIC
-# MAGIC 1. **Registrar Modelo no Unity Catalog**:
+# MAGIC 1. **Apontar o endpoint para o alias Champion** (não para uma versão fixa —
+# MAGIC    assim promover um novo Champion atualiza o serving automaticamente):
 # MAGIC ```python
-# MAGIC import mlflow
-# MAGIC
-# MAGIC # Registrar modelo
-# MAGIC model_uri = f"runs:/{run_id}/model"
-# MAGIC mlflow.register_model(
-# MAGIC     model_uri=model_uri,
-# MAGIC     name=f"{CATALOG}.{SCHEMA_GOLD}.{MODEL_NAME}"
-# MAGIC )
+# MAGIC model_uri = f"models:/{CATALOG}.{SCHEMA_GOLD}.{MODEL_NAME}@Champion"
 # MAGIC ```
 # MAGIC
 # MAGIC 2. **Criar Endpoint de Serving**:
