@@ -25,6 +25,8 @@ csv_path = f"{repo_root}/02_ingestion/sample_data/csvs/"
 # MAGIC %md
 # MAGIC ## 1. Configurar Auto Loader para Clientes
 
+# COMMAND ----------
+
 print("📥 Configurando Auto Loader para clientes_manuais.csv...\n")
 
 # Checkpoint location
@@ -48,6 +50,8 @@ print("✅ Auto Loader configurado para clientes")
 # MAGIC ## 2. Escrever Stream para Bronze
 
 # Escrever streaming para tabela Bronze
+# COMMAND ----------
+
 query_clientes = (df_clientes_csv.writeStream
     .format("delta")
     .outputMode("append")
@@ -66,6 +70,8 @@ print("✅ Dados de clientes_manuais.csv ingeridos!")
 
 # MAGIC %md
 # MAGIC ## 3. Configurar Auto Loader para Faturas
+
+# COMMAND ----------
 
 print("📥 Configurando Auto Loader para faturas_manuais.csv...\n")
 
@@ -99,6 +105,8 @@ print("✅ Dados de faturas_manuais.csv ingeridos!")
 # MAGIC %md
 # MAGIC ## 4. Validar Dados Ingeridos
 
+# COMMAND ----------
+
 print("\n🔍 Validando dados ingeridos...\n")
 
 print("📊 Clientes CSV:")
@@ -126,6 +134,8 @@ spark.sql(f"SELECT * FROM {CATALOG}.bronze.faturas_csv LIMIT 5").show(truncate=F
 # MAGIC 
 # MAGIC **Como adicionar novos dados**:
 # MAGIC Basta adicionar novos CSVs no diretório `/sample_data/csvs/` e re-rodar!
+
+# COMMAND ----------
 
 print("\n" + "="*60)
 print("✅ AUTO LOADER CONFIGURADO E DADOS INGERIDOS!")

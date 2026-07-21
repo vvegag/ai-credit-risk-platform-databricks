@@ -24,6 +24,8 @@ CATALOG = dbutils.widgets.get("catalog")
 # MAGIC %md
 # MAGIC ## 1. Validar Schemas Existentes
 
+# COMMAND ----------
+
 print("🔍 Validando schemas...\n")
 
 schemas = ['bronze', 'silver', 'gold']
@@ -45,6 +47,8 @@ for schema in schemas:
 # MAGIC - Criar tabelas
 # MAGIC - Modificar dados
 # MAGIC - Executar pipelines ETL
+
+# COMMAND ----------
 
 print("👷 Configurando permissões para Data Engineers...\n")
 
@@ -87,6 +91,8 @@ except Exception as e:
 # MAGIC - SELECT em Bronze/Silver (ler dados)
 # MAGIC - SELECT, CREATE, MODIFY em Gold (criar features)
 
+# COMMAND ----------
+
 print("🔬 Configurando permissões para Data Scientists...\n")
 
 data_scientist_group = "data_scientists"
@@ -119,6 +125,8 @@ except Exception as e:
 # MAGIC Business Users precisam apenas de:
 # MAGIC - SELECT em Gold (ler features e métricas)
 
+# COMMAND ----------
+
 print("📊 Configurando permissões para Business Users...\n")
 
 business_user_group = "business_users"
@@ -138,6 +146,8 @@ except Exception as e:
 
 # MAGIC %md
 # MAGIC ## 5. Verificar Permissões Configuradas
+
+# COMMAND ----------
 
 print("🔍 Verificando permissões configuradas...\n")
 
@@ -166,6 +176,8 @@ for schema in schemas:
 # MAGIC 5. Re-rode este notebook
 # MAGIC 
 # MAGIC **Ou via SQL (se tiver permissões de admin)**:
+
+# COMMAND ----------
 
 print("📋 Comandos para criar grupos (copie se necessário):\n")
 
@@ -197,6 +209,8 @@ print(comandos_criar_grupos)
 # MAGIC 1. Criar grupos no Unity Catalog (se ainda não existem)
 # MAGIC 2. Adicionar usuários aos grupos
 # MAGIC 3. Popular dados (02_ingestion/)
+
+# COMMAND ----------
 
 print("\n" + "="*60)
 print("✅ CONFIGURAÇÃO DE PERMISSÕES COMPLETA!")

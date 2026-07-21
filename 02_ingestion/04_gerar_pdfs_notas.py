@@ -25,6 +25,8 @@ import os
 # MAGIC %md
 # MAGIC ## 1. Função para Gerar Nota Fiscal
 
+# COMMAND ----------
+
 def gerar_nota_fiscal_pdf(
     filename,
     numero_nf,
@@ -138,6 +140,8 @@ def gerar_nota_fiscal_pdf(
 # MAGIC %md
 # MAGIC ## 2. Gerar 10 PDFs de Exemplo
 
+# COMMAND ----------
+
 print("📄 Gerando 10 PDFs de notas fiscais...\n")
 
 # Diretório de saída derivado do próprio notebook (funciona em qualquer workspace/Repo/Git folder)
@@ -212,6 +216,8 @@ for i, cliente in enumerate(clientes_exemplo, 1):
 # MAGIC %md
 # MAGIC ## 3. Validar PDFs Gerados
 
+# COMMAND ----------
+
 print("\n🔍 Validando PDFs gerados...\n")
 
 import os
@@ -237,6 +243,8 @@ for pdf in sorted(pdf_files):
 # MAGIC 1. Criar CSVs de exemplo
 # MAGIC 2. Configurar Auto Loader
 # MAGIC 3. Testar pipeline RAG
+
+# COMMAND ----------
 
 print("\n" + "="*60)
 print("✅ PDFS DE NOTAS FISCAIS GERADOS!")

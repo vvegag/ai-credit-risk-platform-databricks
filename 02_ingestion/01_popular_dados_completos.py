@@ -11,14 +11,16 @@
 
 # COMMAND ----------
 
-from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import random
 from datetime import datetime, timedelta
 import numpy as np
 
-spark = SparkSession.builder.getOrCreate()
+# `spark` já vem pré-injetado e conectado ao Unity Catalog pelo runtime do notebook —
+# NUNCA chamar SparkSession.builder.getOrCreate() aqui. Em serverless/Spark Connect isso cria
+# uma sessão paralela desconectada do catálogo real: o código roda sem erro, mas as escritas
+# não vão para as tabelas reais (bug encontrado rodando de verdade no Job).
 
 dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
 CATALOG = dbutils.widgets.get("catalog")
@@ -27,6 +29,8 @@ CATALOG = dbutils.widgets.get("catalog")
 
 # MAGIC %md
 # MAGIC ## 1. Gerar Clientes (1000 registros)
+
+# COMMAND ----------
 
 print("👥 Gerando 1000 clientes sintéticos...\n")
 
@@ -111,6 +115,8 @@ df_clientes.show(5)
 
 # MAGIC %md
 # MAGIC ## 2. Gerar Faturas (5000 registros)
+
+# COMMAND ----------
 
 print("📄 Gerando 5000 faturas sintéticas...\n")
 
@@ -206,6 +212,8 @@ df_faturas.show(5)
 # MAGIC %md
 # MAGIC ## 3. Gerar Pagamentos (3000 registros)
 
+# COMMAND ----------
+
 print("💰 Gerando 3000 pagamentos sintéticos...\n")
 
 # Pegar apenas faturas pagas
@@ -244,6 +252,8 @@ df_pagamentos.show(5)
 # MAGIC %md
 # MAGIC ## 4. Salvar em Unity Catalog - Bronze Layer
 
+# COMMAND ----------
+
 print(f"💾 Salvando dados em {CATALOG}.bronze...\n")
 
 # Salvar Clientes
@@ -262,6 +272,8 @@ print(f"✅ {CATALOG}.bronze.pagamentos criada")
 
 # MAGIC %md
 # MAGIC ## 5. Validação dos Dados
+
+# COMMAND ----------
 
 print("\n🔍 Validando dados gerados...\n")
 
@@ -302,6 +314,8 @@ spark.sql(f"""
 # MAGIC 1. Gerar PDFs de notas fiscais (sample_data/)
 # MAGIC 2. Criar CSVs de exemplo
 # MAGIC 3. Rodar transformação Silver (03_feature_engineering/)
+
+# COMMAND ----------
 
 print("\n" + "="*60)
 print("✅ FASE 1 - DADOS BASE COMPLETOS!")
