@@ -35,15 +35,15 @@ print(f"  ✅ {df_faturas.count():,} faturas carregadas")
 # DBTITLE 1,Features Agregadas por Cliente
 features = df_faturas.groupBy("id_cliente").agg(
     # Faturamento por período
-    sum_(when(datediff(current_date(), col("data_emissao")) <= 90, col("valor_total")).otherwise(0)).alias("total_faturado_90d"),
-    sum_(when(datediff(current_date(), col("data_emissao")) <= 180, col("valor_total")).otherwise(0)).alias("total_faturado_180d"),
-    sum_(when(datediff(current_date(), col("data_emissao")) <= 365, col("valor_total")).otherwise(0)).alias("total_faturado_365d"),
+    sum(when(datediff(current_date(), col("data_emissao")) <= 90, col("valor_total")).otherwise(0)).alias("total_faturado_90d"),
+    sum(when(datediff(current_date(), col("data_emissao")) <= 180, col("valor_total")).otherwise(0)).alias("total_faturado_180d"),
+    sum(when(datediff(current_date(), col("data_emissao")) <= 365, col("valor_total")).otherwise(0)).alias("total_faturado_365d"),
 
     # Contagens por status
     count("*").alias("count_faturas_total"),
-    sum_(when(col("status") == "Paga", 1).otherwise(0)).alias("count_faturas_pagas"),
-    sum_(when(col("status") == "Pendente", 1).otherwise(0)).alias("count_faturas_pendentes"),
-    sum_(when(col("status") == "Atrasada", 1).otherwise(0)).alias("count_faturas_atrasadas"),
+    sum(when(col("status") == "Paga", 1).otherwise(0)).alias("count_faturas_pagas"),
+    sum(when(col("status") == "Pendente", 1).otherwise(0)).alias("count_faturas_pendentes"),
+    sum(when(col("status") == "Atrasada", 1).otherwise(0)).alias("count_faturas_atrasadas"),
 
     # Estatísticas de valores
     avg("valor_total").alias("valor_medio_fatura"),

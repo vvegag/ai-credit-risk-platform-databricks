@@ -50,7 +50,7 @@ df_pagamentos_bronze = spark.table(f"{CATALOG}.bronze.pagamentos")
 
 # Um pagamento por fatura (a base sintética já garante isso, mas protegemos contra duplicatas)
 df_pagamentos_agg = df_pagamentos_bronze.groupBy("id_fatura").agg(
-    sum_("valor").alias("valor_pago_total"),
+    sum("valor").alias("valor_pago_total"),
     first("forma_pagamento").alias("forma_pagamento")
 )
 
