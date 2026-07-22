@@ -95,6 +95,9 @@ TABLE_VERSIONS = f"{CATALOG}.{SCHEMA_GOLD}.model_versions"
 MODEL_NAME = "credit_risk_classifier"
 MODEL_PATH = "/tmp/xgboost_model.pkl"
 MODEL_REGISTRY_NAME = f"{CATALOG}.{SCHEMA_GOLD}.{MODEL_NAME}"
+# Fallback: usado se o UC Model Registry estiver indisponível por infraestrutura da conta
+# (ver register_and_promote_model). Mesmo caminho usado por 04_modeling/01_.
+FALLBACK_MODEL_PATH = f"/Volumes/{CATALOG}/gold/model_fallback/credit_risk_classifier"
 
 # Unity Catalog Model Registry (não workspace registry) + aliases de promoção
 mlflow.set_registry_uri("databricks-uc")
@@ -411,7 +414,11 @@ def register_and_promote_model(model, metrics, X_sample, promote_to_champion, mo
         promote_to_champion: resultado de should_deploy()
 
     Returns:
-        (model_name, version_number)
+        (model_name, version_number) -- version_number é "fallback" se o Model Registry
+        estiver indisponível (ver FALLBACK_MODEL_PATH) em vez de um número de versão UC.
+
+    Fallback: se o registro no UC falhar por infraestrutura (ex: permissão S3 quebrada na
+    conta), salva o modelo direto num Volume em vez de travar o pipeline inteiro.
     """
     from mlflow.models.signature import infer_signature
 
@@ -421,31 +428,44 @@ def register_and_promote_model(model, metrics, X_sample, promote_to_champion, mo
     client = MlflowClient()
     signature = infer_signature(X_sample, model.predict(X_sample))
 
-    with mlflow.start_run(run_name=f"register_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
-        mlflow.log_metrics(metrics)
-        model_info = mlflow.xgboost.log_model(
-            model, "model",
-            signature=signature,
-            registered_model_name=model_name,
-        )
-        version = model_info.registered_model_version
+    try:
+        with mlflow.start_run(run_name=f"register_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
+            mlflow.log_metrics(metrics)
+            model_info = mlflow.xgboost.log_model(
+                model, "model",
+                signature=signature,
+                registered_model_name=model_name,
+            )
+            version = model_info.registered_model_version
 
-    print(f"✅ Modelo registrado no UC: {model_name} v{version}")
+        print(f"✅ Modelo registrado no UC: {model_name} v{version}")
 
-    if promote_to_champion:
+        if promote_to_champion:
+            try:
+                current_champion = client.get_model_version_by_alias(model_name, ALIAS_CHAMPION)
+                client.set_registered_model_alias(model_name, ALIAS_CHALLENGER, current_champion.version)
+                print(f"   ↳ Champion anterior (v{current_champion.version}) rebaixado para Challenger")
+            except Exception:
+                print("   ↳ Nenhum Champion anterior — primeira promoção")
+
+            client.set_registered_model_alias(model_name, ALIAS_CHAMPION, version)
+            print(f"   ↳ v{version} promovido a Champion")
+        else:
+            print(f"   ↳ v{version} registrado sem promoção (deploy não aprovado)")
+
+        return model_name, version
+
+    except Exception as e:
+        print(f"⚠️ Falha ao registrar no UC Model Registry ({type(e).__name__}: {e})")
+        print(f"↳ Fallback: salvando o modelo direto no Volume {FALLBACK_MODEL_PATH}")
+        spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.model_fallback")
         try:
-            current_champion = client.get_model_version_by_alias(model_name, ALIAS_CHAMPION)
-            client.set_registered_model_alias(model_name, ALIAS_CHALLENGER, current_champion.version)
-            print(f"   ↳ Champion anterior (v{current_champion.version}) rebaixado para Challenger")
+            dbutils.fs.rm(FALLBACK_MODEL_PATH, recurse=True)
         except Exception:
-            print("   ↳ Nenhum Champion anterior — primeira promoção")
-
-        client.set_registered_model_alias(model_name, ALIAS_CHAMPION, version)
-        print(f"   ↳ v{version} promovido a Champion")
-    else:
-        print(f"   ↳ v{version} registrado sem promoção (deploy não aprovado)")
-
-    return model_name, version
+            pass
+        mlflow.xgboost.save_model(model, FALLBACK_MODEL_PATH)
+        print(f"✅ Modelo salvo em {FALLBACK_MODEL_PATH} (sem Model Registry — sem alias Champion/Challenger)")
+        return model_name, "fallback"
 
 # COMMAND ----------
 

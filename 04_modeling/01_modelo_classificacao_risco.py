@@ -775,31 +775,55 @@ print(f"   - Optimal F1: {best_f1:.4f}")
 # não um pickle solto em /tmp). Mesmo MODEL_REGISTRY_NAME usado por
 # 05_mlops/01_mlops_pipeline.py — uma única entrada no registry, não dois modelos
 # desencontrados.
+#
+# Fallback: em alguns workspaces o storage interno do Unity Catalog Model Registry pode
+# falhar por motivo de infraestrutura alheio ao código (ex: permissão AWS S3 quebrada na
+# conta). Se o registro falhar por QUALQUER motivo, salva o modelo num Volume UC — não é o
+# ideal (sem versionamento nem aliases Champion/Challenger de verdade), mas garante que o
+# resto do pipeline continue rodando em vez de travar o notebook inteiro.
 mlflow.log_metrics({
     'accuracy': accuracy, 'precision': precision, 'recall': recall,
     'f1_score': f1, 'auc_roc': roc_auc,
 })
 signature = infer_signature(X_train, model.predict(X_train))
-model_info = mlflow.xgboost.log_model(
-    model, "model",
-    signature=signature,
-    registered_model_name=MODEL_REGISTRY_NAME,
-)
-mlflow.end_run()
 
-print(f"✅ Modelo registrado no UC Model Registry: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version}")
-
-# Bootstrap: se este é o primeiro modelo registrado (ainda não existe alias Champion),
-# promove-o como Champion inicial. Promoções seguintes (retreino com métrica melhor)
-# são feitas por 05_mlops/01_mlops_pipeline.py, não aqui.
 from mlflow.tracking import MlflowClient
 _client = MlflowClient()
+FALLBACK_MODEL_PATH = f"/Volumes/{CATALOG}/gold/model_fallback/credit_risk_classifier"
+_registry_ok = False
+
 try:
-    _client.get_model_version_by_alias(MODEL_REGISTRY_NAME, "Champion")
-    print("ℹ️ Já existe um Champion registrado — mantendo-o (retreino é feito por 05_mlops/)")
-except Exception:
-    _client.set_registered_model_alias(MODEL_REGISTRY_NAME, "Champion", model_info.registered_model_version)
-    print(f"🏆 Nenhum Champion prévio — v{model_info.registered_model_version} promovido a Champion inicial")
+    model_info = mlflow.xgboost.log_model(
+        model, "model",
+        signature=signature,
+        registered_model_name=MODEL_REGISTRY_NAME,
+    )
+    print(f"✅ Modelo registrado no UC Model Registry: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version}")
+
+    # Bootstrap: se este é o primeiro modelo registrado (ainda não existe alias Champion),
+    # promove-o como Champion inicial. Promoções seguintes (retreino com métrica melhor)
+    # são feitas por 05_mlops/01_mlops_pipeline.py, não aqui.
+    try:
+        _client.get_model_version_by_alias(MODEL_REGISTRY_NAME, "Champion")
+        print("ℹ️ Já existe um Champion registrado — mantendo-o (retreino é feito por 05_mlops/)")
+    except Exception:
+        _client.set_registered_model_alias(MODEL_REGISTRY_NAME, "Champion", model_info.registered_model_version)
+        print(f"🏆 Nenhum Champion prévio — v{model_info.registered_model_version} promovido a Champion inicial")
+
+    _registry_ok = True
+
+except Exception as e:
+    print(f"⚠️ Falha ao registrar no UC Model Registry ({type(e).__name__}: {e})")
+    print(f"↳ Fallback: salvando o modelo direto no Volume {FALLBACK_MODEL_PATH}")
+    spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.model_fallback")
+    try:
+        dbutils.fs.rm(FALLBACK_MODEL_PATH, recurse=True)  # save_model exige diretório inexistente
+    except Exception:
+        pass  # não existia ainda, tudo bem
+    mlflow.xgboost.save_model(model, FALLBACK_MODEL_PATH)
+    print(f"✅ Modelo salvo em {FALLBACK_MODEL_PATH} (sem Model Registry — sem alias Champion/Challenger)")
+
+mlflow.end_run()
 
 # COMMAND ----------
 
@@ -821,7 +845,17 @@ y_full = pd.concat([y_train, y_test], axis=0)
 # `model` recém-treinado em memória. Isso garante que credit_risk.gold.model_predictions
 # sempre reflita o modelo realmente em produção (o mesmo que 05_mlops/ promove),
 # mesmo que este notebook seja reexecutado sem que o retreino tenha sido aprovado.
-champion_model = mlflow.xgboost.load_model(f"models:/{MODEL_REGISTRY_NAME}@Champion")
+#
+# Fallback: se o Model Registry não tem Champion (porque o registro falhou na célula
+# anterior por infraestrutura), carrega do Volume salvo como fallback.
+try:
+    champion_model = mlflow.xgboost.load_model(f"models:/{MODEL_REGISTRY_NAME}@Champion")
+    print(f"✅ Modelo carregado do UC Model Registry: {MODEL_REGISTRY_NAME}@Champion")
+except Exception as e:
+    print(f"⚠️ Não foi possível carregar do Model Registry ({type(e).__name__}) — usando fallback do Volume")
+    champion_model = mlflow.xgboost.load_model(FALLBACK_MODEL_PATH)
+    print(f"✅ Modelo carregado do fallback: {FALLBACK_MODEL_PATH}")
+
 y_full_pred = champion_model.predict(X_full)
 y_full_pred_proba = champion_model.predict_proba(X_full)[:, 1]
 
@@ -922,7 +956,10 @@ print("  3. SHAP values fornecem explicabilidade para cada predição")
 print("  4. O threshold pode ser ajustado conforme o trade-off desejado entre FP e FN")
 
 print("\n📦 ARTEFATOS GERADOS:")
-print(f"  • Modelo registrado: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version} (UC Model Registry)")
+if _registry_ok:
+    print(f"  • Modelo registrado: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version} (UC Model Registry)")
+else:
+    print(f"  • Modelo salvo em fallback: {FALLBACK_MODEL_PATH} (UC Model Registry indisponível nesta conta)")
 print(f"  • Tabela de predições: {table_name}")
 print(f"  • Plots e métricas: /tmp/ (10 arquivos)")
 print(f"  • Feature importance: /tmp/feature_importance.csv")
