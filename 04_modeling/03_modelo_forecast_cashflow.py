@@ -56,17 +56,21 @@ print(f"📦 MLflow version: {mlflow.__version__}")
 # COMMAND ----------
 
 # DBTITLE 1,2️⃣ Criar Série Temporal de Cash Flow
-# Agregação por data feita em Spark (só o resultado, 1 linha por data, vai para pandas/Prophet)
+# Agregação por SEMANA (não por dia) feita em Spark. Com ~5.000 faturas sintéticas
+# espalhadas em ~1 ano, agregação diária deixa a série muito esparsa/ruidosa (poucas
+# faturas vencendo por dia) — o Prophet ajusta mal e o MAPE fica altíssimo (>200%,
+# confirmado rodando de verdade). Semanal suaviza o ruído e ainda é granularidade
+# realista para planejamento financeiro.
 df_cashflow = spark.sql(f"""
   SELECT
-    data_vencimento as data,
+    date_trunc('week', data_vencimento) as data,
     SUM(valor_total) as receita_esperada,
     SUM(CASE WHEN dias_atraso <= 0 THEN valor_total ELSE 0 END) as receita_recebida,
     SUM(CASE WHEN dias_atraso > 0 THEN valor_em_aberto ELSE 0 END) as perda_inadimplencia,
     COUNT(*) as num_faturas
   FROM {CATALOG}.silver.faturas_enriquecidas
-  GROUP BY data_vencimento
-  ORDER BY data_vencimento
+  GROUP BY date_trunc('week', data_vencimento)
+  ORDER BY data
 """).toPandas()
 
 # Converter para datetime
@@ -116,20 +120,21 @@ print(df_prophet_clean['y'].describe())
 # Iniciar MLflow run
 with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
     
-    # Configurar Prophet
+    # Configurar Prophet — série agora é semanal, não diária (ver célula anterior)
     model = Prophet(
         daily_seasonality=False,
-        weekly_seasonality=True,
+        weekly_seasonality=False,  # não faz sentido com pontos semanais
         yearly_seasonality=False,
         changepoint_prior_scale=0.05  # Sensibilidade a mudanças de tendência
     )
-    
+
     # Treinar
     print("🔄 Treinando Prophet...")
     model.fit(df_prophet_clean)
-    
-    # Fazer forecast para os próximos 90 dias
-    future = model.make_future_dataframe(periods=90)
+
+    # Fazer forecast para as próximas ~13 semanas (~90 dias), respeitando a frequência
+    # semanal da série de treino
+    future = model.make_future_dataframe(periods=13, freq='W')
     forecast = model.predict(future)
     
     # Separar histórico de forecast
@@ -161,9 +166,9 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
     print(f"\n📅 Período de Forecast:")
     print(f"  Início: {forecast_future['ds'].min().strftime('%Y-%m-%d')}")
     print(f"  Fim:    {forecast_future['ds'].max().strftime('%Y-%m-%d')}")
-    print(f"\n💰 Previsão de Cash Flow (próximos 90 dias):")
+    print(f"\n💰 Previsão de Cash Flow (próximas ~13 semanas / ~90 dias):")
     print(f"  Total Esperado:  R$ {forecast_future['yhat'].sum():,.2f}")
-    print(f"  Média Diária:    R$ {forecast_future['yhat'].mean():,.2f}")
+    print(f"  Média Semanal:   R$ {forecast_future['yhat'].mean():,.2f}")
     print(f"  Limite Inferior: R$ {forecast_future['yhat_lower'].sum():,.2f}")
     print(f"  Limite Superior: R$ {forecast_future['yhat_upper'].sum():,.2f}")
     print(f"\n📦 Run ID: {run_id}")
@@ -176,10 +181,11 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
 df_forecast_save = forecast_future[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].copy()
 df_forecast_save.columns = ['data_prevista', 'cashflow_previsto', 'cashflow_min', 'cashflow_max']
 
-# Adicionar categorização de risco
+# Adicionar categorização de risco — thresholds escalados para total SEMANAL
+# (cashflow_previsto agora é soma de 1 semana, não de 1 dia)
 df_forecast_save['risco_cashflow'] = pd.cut(
     df_forecast_save['cashflow_previsto'],
-    bins=[-np.inf, 0, 50000, 100000, np.inf],
+    bins=[-np.inf, 0, 350000, 700000, np.inf],
     labels=['Crítico', 'Atenção', 'Normal', 'Excelente']
 )
 
@@ -191,7 +197,7 @@ df_forecast_save['janela'] = pd.cut(
     labels=['0-30 dias', '31-60 dias', '61-90 dias']
 )
 
-# Converter para Spark e salvar (tabela pequena: 90 linhas, 1 por dia)
+# Converter para Spark e salvar (tabela pequena: ~13 linhas, 1 por semana)
 spark_df_forecast = spark.createDataFrame(df_forecast_save)
 spark_df_forecast.write.mode("overwrite").saveAsTable(f"{CATALOG}.gold.forecast_cashflow")
 
