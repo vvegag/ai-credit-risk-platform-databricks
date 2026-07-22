@@ -41,6 +41,10 @@ import xgboost as xgb
 import mlflow
 import mlflow.xgboost
 
+# Sem isso, mlflow.start_run() tenta resolver o registry URI padrão via config Spark
+# (spark.mlflow.modelRegistryUri), que não existe em serverless/Spark Connect
+# (CONFIG_NOT_AVAILABLE) -- mesmo problema já visto em 04_modeling/01_ e 05_mlops/01_.
+mlflow.set_registry_uri("databricks-uc")
 mlflow.set_experiment(f"/Shared/{CATALOG}_regressao_valor_risco")
 
 print("✅ Bibliotecas carregadas")

@@ -48,6 +48,9 @@ warnings.filterwarnings('ignore')
 dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
 CATALOG = dbutils.widgets.get("catalog")
 
+# Evita CONFIG_NOT_AVAILABLE (spark.mlflow.modelRegistryUri) ao resolver o registry
+# padrão em serverless/Spark Connect — mesma causa já vista em 02_modelo_regressao.py.
+mlflow.set_registry_uri("databricks-uc")
 mlflow.set_experiment(f"/Shared/{CATALOG}_forecast_cashflow")
 
 print("✅ Bibliotecas carregadas")
