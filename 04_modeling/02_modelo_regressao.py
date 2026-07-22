@@ -18,6 +18,17 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Instalação de Bibliotecas
+# xgboost não vem pré-instalado em compute serverless (diferente de clusters com ML Runtime)
+%pip install xgboost==2.0.3 mlflow==2.9.2 scikit-learn==1.3.2 --quiet
+
+# COMMAND ----------
+
+# DBTITLE 1,Restart Python
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # DBTITLE 1,1️⃣ Setup e Imports
 dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
 CATALOG = dbutils.widgets.get("catalog")
