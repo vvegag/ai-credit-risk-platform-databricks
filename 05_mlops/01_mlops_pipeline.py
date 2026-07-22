@@ -114,7 +114,7 @@ ALERT_THRESHOLDS = {
 # com "Public DBFS root" desabilitado). Mesma configuração de 04_modeling/01_, robusta
 # independente de qual dos dois notebooks cria o experimento primeiro.
 spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.mlflow_artifacts")
-_artifact_location = f"/Volumes/{CATALOG}/gold/mlflow_artifacts"
+_artifact_location = f"dbfs:/Volumes/{CATALOG}/gold/mlflow_artifacts"
 _experiment_name = f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops"
 
 _experiment = MlflowClient().get_experiment_by_name(_experiment_name)

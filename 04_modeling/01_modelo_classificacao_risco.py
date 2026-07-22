@@ -398,7 +398,9 @@ print("   (Usado para lidar com desbalanceamento de classes)")
 from mlflow.tracking import MlflowClient
 
 spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.mlflow_artifacts")
-_artifact_location = f"/Volumes/{CATALOG}/gold/mlflow_artifacts"
+# MLflow exige um esquema de URI explícito no artifact_location (rejeita path puro como file:/
+# implícito) — "dbfs:" é o esquema que expõe Volumes UC, não a storage DBFS root restrita.
+_artifact_location = f"dbfs:/Volumes/{CATALOG}/gold/mlflow_artifacts"
 _experiment_name = f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops"
 
 _client = MlflowClient()
@@ -408,7 +410,7 @@ if _experiment is None:
 mlflow.set_experiment(_experiment_name)
 
 print(f"✅ MLflow configurado: {_experiment_name}")
-print(f"📍 Artefatos em: {_artifact_location} (Volume UC, não DBFS)")
+print(f"📍 Artefatos em: {_artifact_location} (Volume UC via prefixo dbfs:, não DBFS root)")
 
 # COMMAND ----------
 
