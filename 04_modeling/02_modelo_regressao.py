@@ -76,6 +76,8 @@ print(df_pd['valor_em_risco'].describe())
 cols_to_drop = [
     'id_cliente', 'cnpj', 'nome',
     'categoria_rfm', 'perfil_comportamental',
+    'categoria_risco',      # rótulo usado para enviesar a geração sintética -> leakage
+    'data_cadastro',        # string crua, não numérica
     'taxa_inadimplencia',   # usada para construir o target -> leakage
     'total_faturado_90d',   # usada para construir o target -> leakage
     'valor_em_risco',       # target
