@@ -110,8 +110,10 @@ replace it with vectorized pandas (`np.select`, `str.contains`, boolean masks) o
 back into Spark. `06_rag_validation/01_rag_notas_fiscais.py` documents a worked example of this
 (validation rules implemented with `np.select` instead of row-wise `.apply`).
 
-DataFrames read more than once in the same run are `.cache()`d and explicitly `.unpersist()`d after
-their last use (see `04_modeling/01_modelo_classificacao_risco.py`, `07_monitoring/01_drift_detection.py`).
+`.cache()`/`.persist()` are avoided on Spark DataFrames project-wide: on serverless compute they
+compile down to a `PERSIST TABLE` RPC, which raises `NOT_SUPPORTED_WITH_SERVERLESS`
+(see `04_modeling/01_modelo_classificacao_risco.py`, `07_monitoring/01_drift_detection.py`, both hit
+this in practice and were fixed by dropping the cache call).
 
 ---
 

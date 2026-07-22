@@ -121,8 +121,9 @@ MODEL_NAME = "credit_risk_classifier"
 MODEL_REGISTRY_NAME = f"{CATALOG}.gold.{MODEL_NAME}"
 mlflow.set_registry_uri("databricks-uc")
 
-# Carregar dados da tabela gold (cache: reutilizado em count/describe/limit/toPandas abaixo)
-df_spark = spark.table(f"{CATALOG}.gold.features_ml").cache()
+# Carregar dados da tabela gold. Sem .cache() — DataFrame.cache()/persist() vira
+# um PERSIST TABLE internamente, que não é suportado em compute serverless.
+df_spark = spark.table(f"{CATALOG}.gold.features_ml")
 
 print(f"📊 Total de registros: {df_spark.count():,}")
 print(f"📊 Total de colunas: {len(df_spark.columns)}")

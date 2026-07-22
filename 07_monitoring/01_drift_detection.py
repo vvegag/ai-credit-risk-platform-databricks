@@ -41,11 +41,11 @@ print(f"🕒 Data/Hora da análise: {datetime.now().strftime('%Y-%m-%d %H:%M:%S'
 # COMMAND ----------
 
 # DBTITLE 1,2️⃣ Carregar Dados de Baseline (Treino)
-# Carregar a feature store usada no TREINO (baseline) — tabela pequena (1 linha/cliente),
-# cache() porque é reaproveitada nas comparações abaixo.
-df_baseline_spark = spark.table(f"{CATALOG}.gold.features_ml").cache()
+# Carregar a feature store usada no TREINO (baseline). Sem .cache() — vira um
+# PERSIST TABLE internamente, não suportado em compute serverless; como o
+# Spark DataFrame só é lido uma vez aqui (toPandas), cache não traria ganho.
+df_baseline_spark = spark.table(f"{CATALOG}.gold.features_ml")
 df_baseline = df_baseline_spark.toPandas()
-df_baseline_spark.unpersist()
 
 # Apenas colunas numéricas, removendo identificadores/categóricas
 cols_to_exclude = ['id_cliente', 'cnpj', 'nome', 'categoria_rfm', 'perfil_comportamental']
