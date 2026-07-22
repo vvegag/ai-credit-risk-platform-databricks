@@ -391,26 +391,24 @@ print("   (Usado para lidar com desbalanceamento de classes)")
 # COMMAND ----------
 
 # DBTITLE 1,Configurar MLflow Experiment
-# O experimento padrão do notebook usa armazenamento de artefato via DBFS root, que fica
-# bloqueado em workspaces com "Public DBFS root" desabilitado (mesmo problema do Auto Loader
-# em 02_ingestion/02_). Apontamos o experimento para um Volume Unity Catalog explicitamente,
-# contornando o DBFS por completo.
+# O experimento padrão do notebook (auto-criado, ligado ao path do notebook) usa
+# armazenamento via DBFS root, bloqueado nesta conta. Um artifact_location explícito em
+# Volume UC (mesmo com esquema "dbfs:") também não funciona: o SDK do MLflow tenta acessar
+# via mount local /dbfs, que não existe em compute serverless (OSError Operation not
+# supported). Solução: criar um experimento nomeado nosso, SEM especificar
+# artifact_location — o Databricks atribui automaticamente um storage compatível com
+# serverless (mesmo padrão usado com sucesso em customer-intelligence-databricks).
 from mlflow.tracking import MlflowClient
 
-spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.mlflow_artifacts")
-# MLflow exige um esquema de URI explícito no artifact_location (rejeita path puro como file:/
-# implícito) — "dbfs:" é o esquema que expõe Volumes UC, não a storage DBFS root restrita.
-_artifact_location = f"dbfs:/Volumes/{CATALOG}/gold/mlflow_artifacts"
 _experiment_name = f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops"
 
 _client = MlflowClient()
 _experiment = _client.get_experiment_by_name(_experiment_name)
 if _experiment is None:
-    _client.create_experiment(_experiment_name, artifact_location=_artifact_location)
+    _client.create_experiment(_experiment_name)
 mlflow.set_experiment(_experiment_name)
 
 print(f"✅ MLflow configurado: {_experiment_name}")
-print(f"📍 Artefatos em: {_artifact_location} (Volume UC via prefixo dbfs:, não DBFS root)")
 
 # COMMAND ----------
 
