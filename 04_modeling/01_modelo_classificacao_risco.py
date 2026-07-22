@@ -155,7 +155,6 @@ display(df_spark.describe())
 # DBTITLE 1,Converter para Pandas e Criar Target
 # Converter para Pandas para análise exploratória
 df_pd = df_spark.toPandas()
-df_spark.unpersist()  # dados já coletados para o pandas; libera memória do cluster
 
 # Criar variável target binária: inadimplente se taxa_inadimplencia > 40%
 df_pd['inadimplente'] = (df_pd['taxa_inadimplencia'] > 40).astype(int)
