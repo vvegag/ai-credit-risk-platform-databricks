@@ -110,8 +110,17 @@ ALERT_THRESHOLDS = {
     "volume_max": 2000
 }
 
-# MLflow
-mlflow.set_experiment(f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops")
+# MLflow — experimento com artefatos em Volume UC, não DBFS root (bloqueado em workspaces
+# com "Public DBFS root" desabilitado). Mesma configuração de 04_modeling/01_, robusta
+# independente de qual dos dois notebooks cria o experimento primeiro.
+spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.mlflow_artifacts")
+_artifact_location = f"/Volumes/{CATALOG}/gold/mlflow_artifacts"
+_experiment_name = f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops"
+
+_experiment = MlflowClient().get_experiment_by_name(_experiment_name)
+if _experiment is None:
+    MlflowClient().create_experiment(_experiment_name, artifact_location=_artifact_location)
+mlflow.set_experiment(_experiment_name)
 
 print(f"✅ Configuração definida:")
 print(f"   - Catalog: {CATALOG}")
