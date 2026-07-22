@@ -106,13 +106,33 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
 
+        # AutoML + LightGBM: comparação exploratória contra o XGBoost manual, não substitui
+        # o classificador oficial — roda em paralelo com os outros modelos.
+        - task_key: automl_lightgbm_comparacao
+          depends_on:
+            - task_key: clustering_features_ml
+          notebook_task:
+            notebook_path: ./04_modeling/04_automl_lightgbm_comparacao.py
+            base_parameters:
+              catalog: ${var.catalog}
+
         # MLOps é específico do classificador (retreino, drift, promoção Champion/Challenger) —
-        # depende só de modelo_classificacao, não dos outros dois modelos.
+        # depende só de modelo_classificacao, não dos outros modelos.
         - task_key: mlops_pipeline
           depends_on:
             - task_key: modelo_classificacao
           notebook_task:
             notebook_path: ./05_mlops/01_mlops_pipeline.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        # Sincroniza o endpoint de Model Serving com o Champion mais recente promovido pelo
+        # mlops_pipeline. Idempotente (cria ou atualiza) — seguro rodar toda semana.
+        - task_key: model_serving_endpoint
+          depends_on:
+            - task_key: mlops_pipeline
+          notebook_task:
+            notebook_path: ./05_mlops/02_model_serving_endpoint.py
             base_parameters:
               catalog: ${var.catalog}
 

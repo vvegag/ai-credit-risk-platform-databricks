@@ -32,6 +32,7 @@
 | **Risk Classifier** | XGBoost + SHAP | Predict delinquency probability & risk class |
 | **Value Regressor** | XGBoost | Estimate monetary value at risk |
 | **Cashflow Forecast** | Prophet | 90-day cashflow prediction with confidence intervals |
+| **AutoML + LightGBM comparison** | Databricks AutoML, LightGBM | Benchmarks the manual XGBoost classifier against an AutoML baseline and LightGBM on the same features/split (`04_modeling/04_automl_lightgbm_comparacao.py`) |
 
 Performance numbers depend on the specific synthetic data run — see [Results](#-results) below.
 
@@ -199,10 +200,11 @@ Exact metric values depend on the specific synthetic run — check the MLflow ex
 ## 🛠️ Tech Stack
 
 ### Platform
-- **Databricks** (Lakehouse Platform)
+- **Databricks** (Lakehouse Platform) — cloud-agnostic by design (validated on AWS-backed and
+  Azure-backed workspaces), no cloud-specific code paths
 - **Unity Catalog** (Governance & Lineage)
 - **Delta Lake** (Storage Layer)
-- **MLflow** (Experiment Tracking & Model Registry)
+- **MLflow** (Experiment Tracking & Model Registry, Model Serving)
 - **Serverless Compute**
 
 ### Languages & Frameworks
@@ -237,11 +239,15 @@ Exact metric values depend on the specific synthetic run — check the MLflow ex
       managed vector index, LangChain conversational agent
 - [x] RAG prototype (`06_rag_validation/`) — local FAISS, kept to document the prototype→production path
 - [x] AI/BI executive dashboard with filters (exports in `08_dashboards/`)
+- [x] **Databricks AutoML** baseline + **LightGBM** comparison against the manual XGBoost classifier
+      (`04_modeling/04_automl_lightgbm_comparacao.py`)
+- [x] **Real-time Model Serving** endpoint (`05_mlops/02_model_serving_endpoint.py`) — serves the
+      Champion alias directly, scale-to-zero, re-synced automatically after every retraining/promotion
 
 ### 🚧 Documented as future work (not built in this repo)
 - [ ] **Genie Space** for self-service natural-language analytics
 - [ ] **Slack/email alerts** wired to the drift/alerts tables already produced by `05_mlops/01_mlops_pipeline.py`
-- [ ] **Real-time Model Serving** endpoint serving the Champion alias directly (`models:/.../@Champion`)
+- [ ] Inference Tables (automatic request/response logging) on the Model Serving endpoint
 - [ ] A/B testing for collection strategies
 - [ ] CRM integration (Salesforce), Next Best Action, Lifetime Value (LTV) prediction
 
