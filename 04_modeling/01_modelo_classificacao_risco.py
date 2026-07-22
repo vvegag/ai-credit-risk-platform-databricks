@@ -306,6 +306,9 @@ plt.show()
 cols_to_drop = [
     'id_cliente', 'cnpj', 'nome',  # Identificadores e texto
     'categoria_rfm', 'perfil_comportamental',  # Categóricas descritivas
+    'categoria_risco',  # Rótulo usado para enviesar a geração sintética original (leakage)
+    'data_cadastro',  # Data crua em string — precisaria virar feature numérica (ex: tempo de
+                       # relacionamento) antes de entrar no modelo; fora de escopo aqui
     'taxa_inadimplencia',  # Feature usada para criar target (leakage)
     'inadimplente'  # Target (será separado)
 ]
