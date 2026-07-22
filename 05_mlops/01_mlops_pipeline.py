@@ -289,6 +289,10 @@ def train_model(X_train, y_train, X_test, y_test, params=None, log_mlflow=True):
     
     # Treinar
     if log_mlflow:
+        # Reafirma o experimento aqui — se essa função for chamada numa sessão que não rodou a
+        # célula "Configuração do Ambiente", o MLflow cai no experimento padrão do notebook
+        # (armazenamento DBFS root, quebrado nesta conta).
+        mlflow.set_experiment(f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops")
         mlflow.start_run(run_name=f"retrain_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         mlflow.log_params(params)
     
@@ -409,6 +413,9 @@ def register_and_promote_model(model, metrics, X_sample, promote_to_champion, mo
         (model_name, version_number)
     """
     from mlflow.models.signature import infer_signature
+
+    # Reafirma o experimento (mesmo motivo do train_model acima)
+    mlflow.set_experiment(f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops")
 
     client = MlflowClient()
     signature = infer_signature(X_sample, model.predict(X_sample))

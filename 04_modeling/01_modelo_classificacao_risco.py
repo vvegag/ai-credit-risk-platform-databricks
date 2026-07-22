@@ -435,6 +435,11 @@ print(f"   - Features: {X_train.shape[1]}")
 print(f"   - Class ratio: {train_class_ratio:.2f}:1")
 print("")
 
+# Reafirma o experimento aqui, não só na célula "Configurar MLflow Experiment" — se essa
+# célula for reexecutada isolada (sessão nova, sem rodar as células anteriores), o MLflow cai
+# de volta no experimento padrão do notebook (armazenamento DBFS root, quebrado nesta conta).
+mlflow.set_experiment(f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/credit_risk_mlops")
+
 mlflow_run = mlflow.start_run(run_name=f"classificacao_risco_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 mlflow.log_params(params)
 
