@@ -31,8 +31,9 @@
 |-------|------|---------|
 | **Risk Classifier** | XGBoost + SHAP | Predict delinquency probability & risk class |
 | **Value Regressor** | XGBoost | Estimate monetary value at risk |
-| **Cashflow Forecast** | Prophet | 90-day cashflow prediction with confidence intervals |
+| **Cashflow Forecast** | Prophet + external regressor | 90-day cashflow prediction with confidence intervals; an `evento_irregular` regressor isolates non-periodic events (Black Friday, year-end) from Prophet's automatic seasonality, and every run logs a Model Card artifact (assumptions, backtest window, MAE/MAPE) to MLflow for auditability (`04_modeling/03_modelo_forecast_cashflow.py`) |
 | **AutoML + LightGBM comparison** | Databricks AutoML, LightGBM | Benchmarks the manual XGBoost classifier against an AutoML baseline and LightGBM on the same features/split (`04_modeling/04_automl_lightgbm_comparacao.py`) |
+| **Collection Prioritization Ranking** | Combines Classifier + Regressor | Joins delinquency probability and value-at-risk into a single `probability × value` priority score and Top-N ranking, answering "who should collections contact first" (`04_modeling/05_priorizacao_cobranca.py`) |
 
 Performance numbers depend on the specific synthetic data run — see [Results](#-results) below.
 
@@ -104,15 +105,19 @@ ai-credit-risk-platform-databricks/
 │   ├── 03_feature_store_rfm.py         # RFM scoring (Recency/Frequency/Monetary)
 │   └── 04_clustering_features_ml.py    # K-Means behavioral profiles → final ML feature table
 ├── 04_modeling/
-│   ├── 01_modelo_classificacao_risco.py # XGBoost Classifier + SHAP + MLflow
-│   ├── 02_modelo_regressao.py           # XGBoost Regressor (monetary value at risk)
-│   └── 03_modelo_forecast_cashflow.py   # Prophet cashflow forecast
+│   ├── 01_modelo_classificacao_risco.py     # XGBoost Classifier + SHAP + MLflow
+│   ├── 02_modelo_regressao.py               # XGBoost Regressor (monetary value at risk)
+│   ├── 03_modelo_forecast_cashflow.py       # Prophet cashflow forecast + irregular-event regressor + Model Card
+│   ├── 04_automl_lightgbm_comparacao.py     # Databricks AutoML + LightGBM vs. manual XGBoost
+│   └── 05_priorizacao_cobranca.py           # Ranks clients by probability × value-at-risk (collection priority)
 ├── 05_mlops/
-│   └── 01_mlops_pipeline.py            # Retraining, drift checks, metrics/alerts, versioning
+│   ├── 01_mlops_pipeline.py            # Retraining, drift checks, metrics/alerts, versioning
+│   └── 02_model_serving_endpoint.py    # Real-time Model Serving endpoint synced to the Champion alias
 ├── 06_rag_validation/
 │   └── 01_rag_notas_fiscais.py         # RAG-style invoice validation (prototype, see note below)
 ├── 07_monitoring/
-│   └── 01_drift_detection.py           # KS-test data drift + prediction monitoring
+│   ├── 01_drift_detection.py                     # KS-test data drift + prediction monitoring
+│   └── 02_validacao_ab_intervencao_cobranca.py   # A/B statistical test for collection-intervention effect (synthetic demo)
 ├── 08_dashboards/exports/              # AI/BI dashboard exports (.lvdash.json)
 ├── 09_docs/                            # Architecture, data dictionary, usage guide
 ├── 10_rag_agent/                       # RAG with real Databricks Vector Search (see note below)
@@ -170,9 +175,9 @@ agent) running alongside modeling. Uses the `catalog` variable defined in `datab
 2. **Setup**: run `01_setup/01_criar_catalogo_schemas.py`, then `02_configurar_permissoes.py`.
 3. **Ingestion**: run `02_ingestion/01_popular_dados_completos.py` (and optionally `02_`, `04_`).
 4. **Feature engineering**: run `03_feature_engineering/01_` through `04_` in order.
-5. **Modeling**: run `04_modeling/01_` through `03_` in order.
-6. **MLOps**: run `05_mlops/01_mlops_pipeline.py`.
-7. **Monitoring**: run `07_monitoring/01_drift_detection.py`.
+5. **Modeling**: run `04_modeling/01_` through `04_` (classification, regression, forecast, AutoML/LightGBM comparison), then `05_priorizacao_cobranca.py` (needs `01_` and `02_` already run).
+6. **MLOps**: run `05_mlops/01_mlops_pipeline.py`, then `02_model_serving_endpoint.py`.
+7. **Monitoring**: run `07_monitoring/01_drift_detection.py`, then `02_validacao_ab_intervencao_cobranca.py` (needs `05_priorizacao_cobranca.py` already run).
 
 All notebooks expose a `catalog` widget (default `credit_risk`) — no hardcoded workspace paths or
 personal usernames anywhere in the code.
@@ -190,7 +195,9 @@ personal usernames anywhere in the code.
 
 - **Classification** (`04_modeling/01_modelo_classificacao_risco.py`): XGBoost + SHAP, tracked via MLflow
 - **Regression** (`04_modeling/02_modelo_regressao.py`): monetary value at risk per client
-- **Forecast** (`04_modeling/03_modelo_forecast_cashflow.py`): 90-day cashflow prediction with confidence intervals (Prophet)
+- **Forecast** (`04_modeling/03_modelo_forecast_cashflow.py`): 90-day cashflow prediction with confidence intervals (Prophet), an external regressor for non-periodic events (Black Friday, year-end), and a Model Card artifact logged to MLflow documenting assumptions/backtest/MAPE for auditability
+- **Collection priority ranking** (`04_modeling/05_priorizacao_cobranca.py`): joins classifier probability with regressor value-at-risk into one `credit_risk.gold.priorizacao_cobranca` Top-N table
+- **A/B intervention validation** (`07_monitoring/02_validacao_ab_intervencao_cobranca.py`): two-proportion Z-test methodology for measuring whether contacting flagged clients reduces delinquency — runs on a clearly-labeled **synthetic** control/treatment simulation (no real intervention log exists in this project), but the statistical test itself is production-ready: swap in a real contact log and it works unchanged
 
 Exact metric values depend on the specific synthetic run — check the MLflow experiment after running
 `04_modeling/` yourself, or `credit_risk.gold.model_metrics` after `05_mlops/01_mlops_pipeline.py`.
@@ -243,12 +250,17 @@ Exact metric values depend on the specific synthetic run — check the MLflow ex
       (`04_modeling/04_automl_lightgbm_comparacao.py`)
 - [x] **Real-time Model Serving** endpoint (`05_mlops/02_model_serving_endpoint.py`) — serves the
       Champion alias directly, scale-to-zero, re-synced automatically after every retraining/promotion
+- [x] **Collection prioritization ranking** combining classifier probability × regressor value-at-risk
+      into a single Top-N table (`04_modeling/05_priorizacao_cobranca.py`)
+- [x] **A/B testing methodology** for collection strategies — two-proportion Z-test with confidence
+      interval and significance check (`07_monitoring/02_validacao_ab_intervencao_cobranca.py`). Runs on
+      a clearly-labeled **synthetic** control/treatment simulation, since no real intervention log exists
+      in this project; the statistical test itself works unchanged against real data
 
 ### 🚧 Documented as future work (not built in this repo)
 - [ ] **Genie Space** for self-service natural-language analytics
 - [ ] **Slack/email alerts** wired to the drift/alerts tables already produced by `05_mlops/01_mlops_pipeline.py`
 - [ ] Inference Tables (automatic request/response logging) on the Model Serving endpoint
-- [ ] A/B testing for collection strategies
 - [ ] CRM integration (Salesforce), Next Best Action, Lifetime Value (LTV) prediction
 
 ---

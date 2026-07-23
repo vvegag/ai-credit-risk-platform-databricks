@@ -82,6 +82,19 @@ df_cashflow['data'] = pd.to_datetime(df_cashflow['data'])
 # Cash flow líquido = receita_recebida - perda_inadimplencia
 df_cashflow['cashflow_liquido'] = df_cashflow['receita_recebida'] - df_cashflow['perda_inadimplencia']
 
+# Flag de eventos irregulares (Black Friday, semanas de fim de ano) — calendário
+# ILUSTRATIVO sobre dados sintéticos, não um calendário real de eventos de negócio.
+# Sazonalidade automática do Prophet (semanal/anual) captura padrões que se repetem
+# todo ano; eventos não-periódicos (ex: um evento que só acontece a cada N anos) não
+# ficam bem representados só pela sazonalidade — por isso viram um regressor externo
+# (ver célula de treino). Detecta automaticamente semanas de fim de novembro (Black
+# Friday) e as duas últimas semanas de dezembro (Natal/Ano Novo) dentro do período
+# observado nos dados.
+def _flag_evento_irregular(data):
+    return int((data.month == 11 and data.day >= 20) or (data.month == 12 and data.day >= 15))
+
+df_cashflow['evento_irregular'] = df_cashflow['data'].apply(_flag_evento_irregular)
+
 print(f"📊 Datas disponíveis: {df_cashflow['data'].min()} até {df_cashflow['data'].max()}")
 print(f"📊 Total de registros: {len(df_cashflow)}")
 print(f"\n💰 Métricas Históricas:")
@@ -96,9 +109,9 @@ df_cashflow.head(10)
 
 # DBTITLE 1,3️⃣ Preparar Dados para Prophet
 # Prophet requer colunas 'ds' (data) e 'y' (valor)
-# Vamos prever o cash flow líquido
-df_prophet = df_cashflow[['data', 'cashflow_liquido']].copy()
-df_prophet.columns = ['ds', 'y']
+# Vamos prever o cash flow líquido (mantém evento_irregular para uso como regressor externo)
+df_prophet = df_cashflow[['data', 'cashflow_liquido', 'evento_irregular']].copy()
+df_prophet.columns = ['ds', 'y', 'evento_irregular']
 
 # Remover outliers extremos (opcional)
 q1 = df_prophet['y'].quantile(0.25)
@@ -108,7 +121,7 @@ lower_bound = q1 - 3 * iqr
 upper_bound = q3 + 3 * iqr
 
 df_prophet_clean = df_prophet[
-    (df_prophet['y'] >= lower_bound) & 
+    (df_prophet['y'] >= lower_bound) &
     (df_prophet['y'] <= upper_bound)
 ].copy()
 
@@ -122,7 +135,7 @@ print(df_prophet_clean['y'].describe())
 # DBTITLE 1,4️⃣ Treinar Prophet e Fazer Forecast
 # Iniciar MLflow run
 with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
-    
+
     # Configurar Prophet — série agora é semanal, não diária (ver célula anterior)
     model = Prophet(
         daily_seasonality=False,
@@ -131,6 +144,13 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
         changepoint_prior_scale=0.05  # Sensibilidade a mudanças de tendência
     )
 
+    # Regressor externo para eventos não-periódicos (Black Friday, fim de ano — ver
+    # célula "Criar Série Temporal"). A sazonalidade automática do Prophet só captura
+    # padrões que se repetem todo ano; um evento fora desse ciclo (ex: uma campanha ou
+    # evento que só acontece a cada alguns anos) distorce a curva se não for isolado
+    # como sinal próprio.
+    model.add_regressor('evento_irregular')
+
     # Treinar
     print("🔄 Treinando Prophet...")
     model.fit(df_prophet_clean)
@@ -138,28 +158,83 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
     # Fazer forecast para as próximas ~13 semanas (~90 dias), respeitando a frequência
     # semanal da série de treino
     future = model.make_future_dataframe(periods=13, freq='W')
+
+    # O regressor precisa de valor também nas datas futuras. Reaplica a mesma regra
+    # usada no histórico (ver _flag_evento_irregular) — datas futuras que caem em
+    # semana de Black Friday/fim de ano também entram marcadas.
+    future['evento_irregular'] = future['ds'].apply(_flag_evento_irregular)
+
     forecast = model.predict(future)
-    
+
     # Separar histórico de forecast
     forecast_future = forecast[forecast['ds'] > df_prophet_clean['ds'].max()].copy()
-    
+
     # Calcular métricas de acurácia no histórico
     historical_forecast = forecast[forecast['ds'] <= df_prophet_clean['ds'].max()].copy()
     historical_actual = df_prophet_clean.merge(historical_forecast[['ds', 'yhat']], on='ds')
-    
+
     mae = np.mean(np.abs(historical_actual['y'] - historical_actual['yhat']))
     mape = np.mean(np.abs((historical_actual['y'] - historical_actual['yhat']) / historical_actual['y'])) * 100
-    
+
     # Log métricas
     mlflow.log_metric("mae", mae)
     mlflow.log_metric("mape", mape)
     mlflow.log_param("forecast_horizon_days", 90)
-    
+
     # Salvar modelo como artefato
     mlflow.prophet.log_model(model, "prophet_model")
-    
+
+    # Model Card: metodologia do forecast, logada como artefato JSON na mesma run.
+    # Resposta direta a um problema real relatado por um head de dados em entrevista:
+    # uma projeção de anos anteriores sem metodologia rastreável, que ninguém sabia
+    # reconstruir depois que a pessoa que a fez saiu da empresa. Qualquer pessoa (mesmo
+    # sem ter treinado o modelo) consegue auditar aqui as premissas, o período de
+    # backtest e a acurácia usados para gerar o número.
+    avg_intervalo_confianca = (forecast_future['yhat_upper'] - forecast_future['yhat_lower']).mean()
+    model_card = {
+        "modelo": "Prophet (Facebook/Meta)",
+        "gerado_em": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "run_id": run.info.run_id,
+        "granularidade_serie": "semanal",
+        "horizonte_forecast_dias": 90,
+        "horizonte_forecast_semanas": 13,
+        "sazonalidade": {
+            "diaria": False,
+            "semanal": False,
+            "anual": False,
+            "motivo": "desabilitadas — pontos semanais não sustentam sazonalidade diária/semanal, "
+                      "e o histórico disponível (~1 ano de dados sintéticos) não cobre ciclos "
+                      "anuais suficientes para uma sazonalidade anual confiável",
+        },
+        "regressores_externos": [
+            {
+                "nome": "evento_irregular",
+                "descricao": "flag binária para semanas de Black Friday (fim de novembro) e "
+                              "fim de ano (Natal/Ano Novo) — calendário ILUSTRATIVO sobre dados "
+                              "sintéticos, não um calendário real de eventos de negócio da empresa",
+            }
+        ],
+        "periodo_backtest": {
+            "inicio": df_prophet_clean['ds'].min().strftime('%Y-%m-%d'),
+            "fim": df_prophet_clean['ds'].max().strftime('%Y-%m-%d'),
+            "num_pontos": len(df_prophet_clean),
+        },
+        "metricas_backtest": {
+            "mae": round(float(mae), 2),
+            "mape_pct": round(float(mape), 2),
+        },
+        "intervalo_confianca_medio": round(float(avg_intervalo_confianca), 2),
+        "premissas_e_limitacoes": [
+            "Dados sintéticos — MAE/MAPE não representam performance em dados reais de produção",
+            "changepoint_prior_scale=0.05 (sensibilidade padrão a mudanças de tendência, não "
+            "recalibrado por busca de hiperparâmetros)",
+            "Outliers extremos removidos por IQR (3x) antes do treino — ver célula de preparação",
+        ],
+    }
+    mlflow.log_dict(model_card, "model_card.json")
+
     run_id = run.info.run_id
-    
+
     print("\n" + "="*60)
     print("📊 RESULTADOS DO FORECAST")
     print("="*60)
@@ -174,6 +249,7 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
     print(f"  Média Semanal:   R$ {forecast_future['yhat'].mean():,.2f}")
     print(f"  Limite Inferior: R$ {forecast_future['yhat_lower'].sum():,.2f}")
     print(f"  Limite Superior: R$ {forecast_future['yhat_upper'].sum():,.2f}")
+    print(f"\n📄 Model Card salvo como artefato MLflow: model_card.json")
     print(f"\n📦 Run ID: {run_id}")
     print("="*60)
 

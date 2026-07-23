@@ -116,6 +116,17 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
 
+        # Combina a saída do classificador com a do regressor num ranking único de
+        # priorização de cobrança — depende dos dois.
+        - task_key: priorizacao_cobranca
+          depends_on:
+            - task_key: modelo_classificacao
+            - task_key: modelo_regressao
+          notebook_task:
+            notebook_path: ./04_modeling/05_priorizacao_cobranca.py
+            base_parameters:
+              catalog: ${var.catalog}
+
         # MLOps é específico do classificador (retreino, drift, promoção Champion/Challenger) —
         # depende só de modelo_classificacao, não dos outros modelos.
         - task_key: mlops_pipeline
@@ -141,6 +152,17 @@ resources:
             - task_key: mlops_pipeline
           notebook_task:
             notebook_path: ./07_monitoring/01_drift_detection.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        # Validação A/B (simulação sintética — ver aviso no próprio notebook) do efeito da
+        # intervenção de cobrança sobre a população priorizada. Depende de priorizacao_cobranca,
+        # não de monitoring_drift.
+        - task_key: validacao_ab_cobranca
+          depends_on:
+            - task_key: priorizacao_cobranca
+          notebook_task:
+            notebook_path: ./07_monitoring/02_validacao_ab_intervencao_cobranca.py
             base_parameters:
               catalog: ${var.catalog}
 
