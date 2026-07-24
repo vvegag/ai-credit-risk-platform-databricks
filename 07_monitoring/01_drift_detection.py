@@ -73,7 +73,10 @@ print(baseline_stats.head())
 
 current_features = baseline_features.copy()
 
-# Simular drift em algumas features (10% das amostras)
+# Simular drift em algumas features (10% das amostras). Seed fixa (padrão do projeto,
+# random_state=42 nos demais notebooks) — sem isso, a injeção de drift muda a cada
+# execução e o resultado do teste KS deixa de ser reprodutível de uma run pra outra.
+np.random.seed(42)
 drift_mask = np.random.random(len(current_features)) < 0.1
 
 # Adicionar drift em features específicas

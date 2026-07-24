@@ -199,30 +199,48 @@ display(df_features.limit(3))
 # COMMAND ----------
 
 # DBTITLE 1,🏗️ Função: Feature Engineering
-def prepare_features(df, target_col="perfil_comportamental", exclude_cols=None):
+def prepare_features(df, target_col="inadimplente", exclude_cols=None):
     """
     Prepara features para treinamento (reutilizando lógica da FASE 2).
-    
+
     Args:
         df: DataFrame Spark com dados brutos
         target_col: Nome da coluna target
         exclude_cols: Lista de colunas a excluir
-    
+
     Returns:
         X (features), y (target), feature_names
     """
     print("🏗️ Preparando features...")
-    
+
     # Converter para Pandas
     df_pandas = df.toPandas()
-    
-    # Definir colunas a excluir
+
+    # Target default alinhado com o classificador que este notebook de fato retreina e
+    # promove (register_and_promote_model usa o mesmo MODEL_REGISTRY_NAME registrado por
+    # 04_modeling/01_modelo_classificacao_risco.py: inadimplente = taxa_inadimplencia > 40%).
+    # Antes, o default era "perfil_comportamental" (cluster de 4 classes de
+    # 04_clustering_features_ml.py) — um problema DIFERENTE do binário que acaba sendo
+    # promovido sob o mesmo nome/alias Champion, além de treinar com objective
+    # binary:logistic (ver train_model) sobre um target multi-classe. Derivamos o mesmo
+    # target de 01_modelo_classificacao_risco.py para manter os dois notebooks consistentes.
+    if target_col == "inadimplente" and "inadimplente" not in df_pandas.columns:
+        df_pandas["inadimplente"] = (df_pandas["taxa_inadimplencia"] > 40).astype(int)
+
+    # Definir colunas a excluir — mesma lista de leakage usada em
+    # 04_modeling/01_modelo_classificacao_risco.py, 02_modelo_regressao.py e
+    # 04_automl_lightgbm_comparacao.py (antes, esta lista aqui não excluía categoria_risco,
+    # data_cadastro nem taxa_inadimplencia — leakage real no pipeline de retreino).
     if exclude_cols is None:
         exclude_cols = [
-            "id_cliente", "cnpj", "nome", "perfil_comportamental",
-            "categoria_rfm"  # Coluna categórica redundante
+            "id_cliente", "cnpj", "nome",
+            "categoria_rfm", "perfil_comportamental",
+            "categoria_risco",      # leakage — usado para enviesar a geração sintética
+            "data_cadastro",        # string crua
+            "taxa_inadimplencia",   # usada para derivar o target -> leakage
+            "inadimplente",         # target (separado em y logo abaixo)
         ]
-    
+
     # Separar features e target
     feature_cols = [col for col in df_pandas.columns if col not in exclude_cols]
     
@@ -1336,7 +1354,7 @@ print("\n[2/7] Simulando drift nos dados...")
 
 # Drift artificial: adicionar ruído em algumas features
 X_test_drift = X_test.copy()
-np.random.seed(123)
+np.random.seed(42)  # padronizado com o resto do projeto (random_state=42 em todo lugar)
 
 # Selecionar 30% das features para adicionar drift
 n_drift_features = int(len(feature_names) * 0.3)

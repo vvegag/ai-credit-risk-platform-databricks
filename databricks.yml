@@ -31,6 +31,9 @@ resources:
             notebook_path: ./01_setup/01_criar_catalogo_schemas.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: setup_permissoes
           depends_on:
@@ -39,6 +42,9 @@ resources:
             notebook_path: ./01_setup/02_configurar_permissoes.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: ingestao_bronze
           depends_on:
@@ -47,6 +53,9 @@ resources:
             notebook_path: ./02_ingestion/01_popular_dados_completos.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: transformacao_silver
           depends_on:
@@ -55,6 +64,9 @@ resources:
             notebook_path: ./03_feature_engineering/01_transformacao_silver.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: transformacao_gold
           depends_on:
@@ -63,6 +75,9 @@ resources:
             notebook_path: ./03_feature_engineering/02_transformacao_gold.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: feature_store_rfm
           depends_on:
@@ -71,6 +86,9 @@ resources:
             notebook_path: ./03_feature_engineering/03_feature_store_rfm.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: clustering_features_ml
           depends_on:
@@ -79,6 +97,9 @@ resources:
             notebook_path: ./03_feature_engineering/04_clustering_features_ml.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # Os 3 modelos são independentes entre si (todos leem gold.features_ml) e rodam em
         # paralelo — cada um só depende de clustering_features_ml, não um do outro.
@@ -89,6 +110,9 @@ resources:
             notebook_path: ./04_modeling/01_modelo_classificacao_risco.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: modelo_regressao
           depends_on:
@@ -97,6 +121,9 @@ resources:
             notebook_path: ./04_modeling/02_modelo_regressao.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: modelo_forecast_cashflow
           depends_on:
@@ -105,6 +132,9 @@ resources:
             notebook_path: ./04_modeling/03_modelo_forecast_cashflow.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # AutoML + LightGBM: comparação exploratória contra o XGBoost manual, não substitui
         # o classificador oficial — roda em paralelo com os outros modelos.
@@ -115,6 +145,9 @@ resources:
             notebook_path: ./04_modeling/04_automl_lightgbm_comparacao.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # Combina a saída do classificador com a do regressor num ranking único de
         # priorização de cobrança — depende dos dois.
@@ -126,6 +159,9 @@ resources:
             notebook_path: ./04_modeling/05_priorizacao_cobranca.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # MLOps é específico do classificador (retreino, drift, promoção Champion/Challenger) —
         # depende só de modelo_classificacao, não dos outros modelos.
@@ -136,6 +172,9 @@ resources:
             notebook_path: ./05_mlops/01_mlops_pipeline.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # Sincroniza o endpoint de Model Serving com o Champion mais recente promovido pelo
         # mlops_pipeline. Idempotente (cria ou atualiza) — seguro rodar toda semana.
@@ -146,6 +185,9 @@ resources:
             notebook_path: ./05_mlops/02_model_serving_endpoint.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: monitoring_drift
           depends_on:
@@ -154,6 +196,9 @@ resources:
             notebook_path: ./07_monitoring/01_drift_detection.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # Validação A/B (simulação sintética — ver aviso no próprio notebook) do efeito da
         # intervenção de cobrança sobre a população priorizada. Depende de priorizacao_cobranca,
@@ -165,6 +210,9 @@ resources:
             notebook_path: ./07_monitoring/02_validacao_ab_intervencao_cobranca.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # RAG protótipo (FAISS local) — só precisa da camada Silver, roda em paralelo com a
         # modelagem.
@@ -175,6 +223,9 @@ resources:
             notebook_path: ./06_rag_validation/01_rag_notas_fiscais.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         # RAG real (Databricks Vector Search): gera PDFs -> extrai/chunka/embeda -> indexa.
         # Depende de clustering_features_ml porque o gerador de documentos também lê
@@ -186,6 +237,9 @@ resources:
             notebook_path: ./10_rag_agent/notebooks/01_gerar_documentos_credito.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: rag_vector_search
           depends_on:
@@ -194,6 +248,9 @@ resources:
             notebook_path: ./10_rag_agent/notebooks/02_vector_search_rag.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
 
         - task_key: rag_agent_langchain
           depends_on:
@@ -202,6 +259,34 @@ resources:
             notebook_path: ./10_rag_agent/notebooks/03_rag_agent_langchain.py
             base_parameters:
               catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
+
+        # Manutenção Delta (OPTIMIZE/ZORDER/VACUUM) — depende do fim de todas as ramificações
+        # que escrevem dados (modelagem/MLOps/monitoring e os dois caminhos de RAG), pra
+        # garantir que a compactação rode depois que a semana inteira de escritas terminou.
+        - task_key: manutencao_delta
+          depends_on:
+            - task_key: monitoring_drift
+            - task_key: validacao_ab_cobranca
+            - task_key: model_serving_endpoint
+            - task_key: rag_validacao_prototipo
+            - task_key: rag_agent_langchain
+          notebook_task:
+            notebook_path: ./01_setup/03_manutencao_delta.py
+            base_parameters:
+              catalog: ${var.catalog}
+          max_retries: 1
+          min_retry_interval_millis: 120000
+          timeout_seconds: 3600
+
+      # Alerta por e-mail se qualquer task falhar na execução agendada — antes disso, uma
+      # falha transitória na segunda-feira de manhã passava despercebida (job só reportava
+      # sucesso/fracasso na UI, sem notificar ninguém).
+      email_notifications:
+        on_failure:
+          - valdomirovega@gmail.com
 
       schedule:
         quartz_cron_expression: "0 0 6 ? * MON"   # segundas-feiras, 6h — retreino/scoring semanal

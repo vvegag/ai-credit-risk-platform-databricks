@@ -142,6 +142,11 @@ df_resultado = pd.DataFrame([{
     "eh_simulacao_sintetica": True,
 }])
 
+# .mode("append"), não "overwrite" — única exceção ao padrão do resto do projeto, de
+# propósito: esta é uma tabela de LOG histórico de execuções (cada linha é o resultado de
+# uma rodada do teste A/B numa data), não um snapshot do estado atual. Sobrescrever
+# apagaria o histórico de testes anteriores, que é justamente o que se quer acompanhar
+# ao longo do tempo.
 spark.createDataFrame(df_resultado).write.mode("append").saveAsTable(f"{CATALOG}.gold.validacao_ab_cobranca")
 
 print(f"✅ Resultado salvo em: {CATALOG}.gold.validacao_ab_cobranca")

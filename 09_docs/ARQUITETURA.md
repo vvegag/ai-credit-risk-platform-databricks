@@ -110,6 +110,15 @@ replace it with vectorized pandas (`np.select`, `str.contains`, boolean masks) o
 back into Spark. `06_rag_validation/01_rag_notas_fiscais.py` documents a worked example of this
 (validation rules implemented with `np.select` instead of row-wise `.apply`).
 
+**Known exceptions to this policy (acknowledged, not fixed)**: `06_rag_validation/01_rag_notas_fiscais.py`
+and `10_rag_agent/notebooks/01_gerar_documentos_credito.py` both call `.toPandas()` on
+invoice/payment-grain tables (not the one-row-per-client tables the two exceptions above cover) to
+generate document text/PDFs row by row. This is acceptable at the synthetic data volume used today
+(a few thousand invoices) but would **not** scale to real production invoice volume — at that point
+these notebooks would need the document-generation logic rewritten with `mapInPandas`/`pandas_udf`
+(keeps the per-row Python logic but runs it distributed across the Spark cluster instead of
+collecting everything to the driver first).
+
 `.cache()`/`.persist()` are avoided on Spark DataFrames project-wide: on serverless compute they
 compile down to a `PERSIST TABLE` RPC, which raises `NOT_SUPPORTED_WITH_SERVERLESS`
 (see `04_modeling/01_modelo_classificacao_risco.py`, `07_monitoring/01_drift_detection.py`, both hit
@@ -125,8 +134,10 @@ this in practice and were fixed by dropping the cache call).
 - **OPTIMIZE + ZORDER**: `01_setup/03_manutencao_delta.py` runs `OPTIMIZE ... ZORDER BY` on the most
   frequently joined/filtered Gold tables (`id_cliente`), and on `silver.faturas_enriquecidas`
   (`id_cliente, data_vencimento`).
-- **VACUUM**: same notebook, default 7-day retention. This is a separate, schedulable maintenance
-  routine — it does not run automatically as part of the main pipeline.
+- **VACUUM**: same notebook, default 7-day retention. Wired into `databricks.yml` as the
+  `manutencao_delta` task, which runs after every branch of the weekly scheduled Job finishes
+  writing — it's a maintenance step, not part of the data-producing critical path, but it does run
+  automatically now (previously manual-only).
 - **Photon**: recommended (cluster/warehouse setting, not code) — the workload is dominated by
   SQL/DataFrame aggregations (feature engineering, drift detection), which benefit directly from
   Photon's vectorized engine.
@@ -141,6 +152,25 @@ this in practice and were fixed by dropping the cache call).
 - **Permissions**: `01_setup/02_configurar_permissoes.py` — data engineers (full access),
   data scientists (read bronze/silver, full gold), business users (read gold only)
 - **Auditability**: Delta Time Travel, MLflow experiment tracking, Unity Catalog lineage
+
+### Sensitive data (known gap, documented design — not implemented)
+
+`bronze.clientes.cnpj` is stored as plaintext today (a Brazilian legal-entity ID, same
+sensitivity class as an individual's CPF), with no column-level masking, classification tag, or
+row-level security, and no LGPD-specific documentation elsewhere in this repo. This wasn't
+implemented because Unity Catalog row filters/column masks require workspace-admin privileges
+that aren't reliably available on the trial/academic accounts this project has been validated
+against — not because it's out of scope for a real deployment. The intended design, if/when a
+workspace with the right privileges is available:
+
+1. **Column mask** on `cnpj` (`ALTER TABLE ... ALTER COLUMN cnpj SET MASK ...`) — a SQL function
+   that returns the full value to `data_engineers`/`data_scientists` (need it for joins/dedup) and
+   a redacted form (e.g. only the first 2 and last 2 digits) to `business_users`.
+2. **Column tag** (`SET TAGS ('sensitivity' = 'pii')`) on `cnpj`, so it shows up in Unity Catalog's
+   built-in classification/lineage UI instead of being indistinguishable from any other string
+   column.
+3. Document the masking rule in `DICIONARIO_DADOS.md` next to the column definition, so the data
+   contract and the actual enforcement don't drift apart.
 
 ---
 

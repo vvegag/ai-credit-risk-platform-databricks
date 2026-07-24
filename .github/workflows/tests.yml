@@ -1,0 +1,26 @@
+name: Tests
+
+# Roda a suíte de testes leve (análise estática, sem Spark/Databricks) a cada push/PR.
+# Não substitui validação no workspace real — os notebooks continuam exigindo Databricks
+# para rodar de fato — mas pega regressões estruturais (ex: leakage) antes do merge.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: pip install pytest
+
+      - name: Run tests
+        run: pytest tests/ -v

@@ -72,7 +72,10 @@ Performance numbers depend on the specific synthetic data run — see [Results](
 - Extracts and chunks text (`pypdf`), embeds with Sentence-Transformers
 - Indexes in a real **Databricks Vector Search** endpoint (`credit_risk.documentos.credit_docs_vector_index`), synced from a Delta table via Change Data Feed
 - **LangChain agent** for conversational queries over the indexed documents
-- Modular Python package (`src/`) with its own tests (`tests/`) and a Model Serving deploy script (`deploy/`)
+- Modular Python package (`src/`) with a Model Serving deploy script (`deploy/`) and a small
+  `tests/` suite (`10_rag_agent/tests/test_rag_agent.py`) — these instantiate real Databricks
+  clients (`ChatDatabricks`, `VectorSearchClient`), so they need a live workspace with the LLM
+  endpoint and vector index provisioned to run; they are not isolated/mocked unit tests
 
 ### 📈 Monitoring & Observability
 
@@ -124,7 +127,10 @@ ai-credit-risk-platform-databricks/
 │   ├── notebooks/                      # Document generation, indexing, LangChain agent
 │   ├── src/                            # Importable package: config, embeddings, vector_search, rag_agent
 │   ├── deploy/                         # Model serving deployment script
-│   └── tests/                          # Unit tests
+│   └── tests/                          # Tests requiring a live Databricks workspace (not mocked)
+├── tests/                              # Static-analysis regression tests (pytest, no Spark/Databricks needed)
+│   └── test_leakage_consistency.py     # Catches target-leakage regressions across all modeling notebooks
+├── .github/workflows/tests.yml         # CI: runs `pytest tests/` on every push/PR
 ├── .gitignore
 ├── databricks.yml                      # Databricks Asset Bundle (job definition, catalog variable)
 ├── requirements.txt
@@ -240,8 +246,14 @@ Exact metric values depend on the specific synthetic run — check the MLflow ex
 - [x] Closed consumption loop: classifier writes `gold.model_predictions` → MLOps pipeline reads it for
       real metrics/alerts → `07_monitoring/` and dashboards/Genie read the same table
 - [x] Standalone KS-test drift detection + health checks (`07_monitoring/01_drift_detection.py`)
-- [x] Delta maintenance routine: `OPTIMIZE`/`ZORDER`/`VACUUM` (`01_setup/03_manutencao_delta.py`)
-- [x] Databricks Asset Bundle (`databricks.yml`) orchestrating the full pipeline as a scheduled Job
+- [x] Delta maintenance routine: `OPTIMIZE`/`ZORDER`/`VACUUM` (`01_setup/03_manutencao_delta.py`), wired
+      into the Job DAG (runs weekly after every branch that writes data)
+- [x] Databricks Asset Bundle (`databricks.yml`) orchestrating the full pipeline as a scheduled Job, with
+      per-task retries/timeouts and an email alert on failure
+- [x] **CI** (`.github/workflows/tests.yml`): a static-analysis regression test
+      (`tests/test_leakage_consistency.py`) catches target-leakage drift across all 4 modeling notebooks
+      on every push — added after this exact class of bug (a stale exclusion list in
+      `05_mlops/01_mlops_pipeline.py`) was found and fixed during a full 4-lens audit
 - [x] RAG with real **Databricks Vector Search** (`10_rag_agent/`) — PDF generation, chunking, embeddings,
       managed vector index, LangChain conversational agent
 - [x] RAG prototype (`06_rag_validation/`) — local FAISS, kept to document the prototype→production path

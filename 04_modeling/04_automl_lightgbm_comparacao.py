@@ -36,6 +36,7 @@ CATALOG = dbutils.widgets.get("catalog")
 
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 import lightgbm as lgb
@@ -145,7 +146,7 @@ lgb_params = {
     'verbosity': -1,
 }
 
-with mlflow.start_run(run_name="lightgbm_classificacao_risco") as run:
+with mlflow.start_run(run_name=f"lightgbm_classificacao_risco_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
     mlflow.log_params(lgb_params)
 
     import time

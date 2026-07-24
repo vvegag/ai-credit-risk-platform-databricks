@@ -134,7 +134,7 @@ print(df_prophet_clean['y'].describe())
 
 # DBTITLE 1,4️⃣ Treinar Prophet e Fazer Forecast
 # Iniciar MLflow run
-with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
+with mlflow.start_run(run_name=f"prophet_cashflow_forecast_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
 
     # Configurar Prophet — série agora é semanal, não diária (ver célula anterior)
     model = Prophet(
@@ -169,20 +169,63 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
     # Separar histórico de forecast
     forecast_future = forecast[forecast['ds'] > df_prophet_clean['ds'].max()].copy()
 
-    # Calcular métricas de acurácia no histórico
+    # Ajuste IN-SAMPLE: o modelo `model` acima foi treinado com TODO o histórico
+    # (df_prophet_clean) e está sendo comparado contra esses mesmos pontos — mede
+    # qualidade de ajuste, não capacidade de generalizar para dados nunca vistos. Não
+    # confundir com backtest de verdade (ver bloco walk-forward logo abaixo).
     historical_forecast = forecast[forecast['ds'] <= df_prophet_clean['ds'].max()].copy()
     historical_actual = df_prophet_clean.merge(historical_forecast[['ds', 'yhat']], on='ds')
 
-    mae = np.mean(np.abs(historical_actual['y'] - historical_actual['yhat']))
-    mape = np.mean(np.abs((historical_actual['y'] - historical_actual['yhat']) / historical_actual['y'])) * 100
+    mae_in_sample = np.mean(np.abs(historical_actual['y'] - historical_actual['yhat']))
+    mape_in_sample = np.mean(np.abs((historical_actual['y'] - historical_actual['yhat']) / historical_actual['y'])) * 100
 
-    # Log métricas
-    mlflow.log_metric("mae", mae)
-    mlflow.log_metric("mape", mape)
+    mlflow.log_metric("mae_in_sample", mae_in_sample)
+    mlflow.log_metric("mape_in_sample", mape_in_sample)
     mlflow.log_param("forecast_horizon_days", 90)
 
     # Salvar modelo como artefato
     mlflow.prophet.log_model(model, "prophet_model")
+
+    # Backtest WALK-FORWARD de verdade: treina um modelo separado só nas primeiras ~80% das
+    # semanas, prevê as últimas ~20% (nunca vistas por esse modelo) e compara contra o valor
+    # real observado nelas — isso sim mede capacidade de generalização, ao contrário do
+    # ajuste in-sample acima. Não usa/substitui o `model` principal (que continua treinado
+    # com 100% do histórico para gerar o forecast futuro na próxima célula).
+    n_total = len(df_prophet_clean)
+    n_train = max(int(n_total * 0.8), n_total - 13)  # nunca deixa menos de ~13 semanas de teste
+    n_train = min(n_train, n_total - 4)  # garante pelo menos 4 semanas de holdout
+    df_wf_train = df_prophet_clean.iloc[:n_train].copy()
+    df_wf_holdout = df_prophet_clean.iloc[n_train:].copy()
+
+    if len(df_wf_train) >= 10 and len(df_wf_holdout) >= 3:
+        model_wf = Prophet(
+            daily_seasonality=False,
+            weekly_seasonality=False,
+            yearly_seasonality=False,
+            changepoint_prior_scale=0.05,
+        )
+        model_wf.add_regressor('evento_irregular')
+        model_wf.fit(df_wf_train)
+
+        future_wf = model_wf.make_future_dataframe(periods=len(df_wf_holdout), freq='W')
+        future_wf['evento_irregular'] = future_wf['ds'].apply(_flag_evento_irregular)
+        forecast_wf = model_wf.predict(future_wf)
+
+        holdout_pred = df_wf_holdout.merge(forecast_wf[['ds', 'yhat']], on='ds', how='inner')
+        mae_walkforward = np.mean(np.abs(holdout_pred['y'] - holdout_pred['yhat']))
+        mape_walkforward = np.mean(np.abs((holdout_pred['y'] - holdout_pred['yhat']) / holdout_pred['y'])) * 100
+
+        mlflow.log_metric("mae_walkforward_out_of_sample", mae_walkforward)
+        mlflow.log_metric("mape_walkforward_out_of_sample", mape_walkforward)
+        mlflow.log_param("walkforward_train_semanas", len(df_wf_train))
+        mlflow.log_param("walkforward_holdout_semanas", len(df_wf_holdout))
+        walkforward_ok = True
+    else:
+        # Histórico curto demais pra separar train/holdout com um mínimo de significância —
+        # documenta a limitação em vez de forçar um número pouco confiável.
+        mae_walkforward = mape_walkforward = None
+        walkforward_ok = False
+        print("⚠️ Histórico insuficiente para walk-forward backtest confiável — pulando essa etapa.")
 
     # Model Card: metodologia do forecast, logada como artefato JSON na mesma run.
     # Resposta direta a um problema real relatado por um head de dados em entrevista:
@@ -214,15 +257,29 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
                               "sintéticos, não um calendário real de eventos de negócio da empresa",
             }
         ],
-        "periodo_backtest": {
+        "periodo_treino": {
             "inicio": df_prophet_clean['ds'].min().strftime('%Y-%m-%d'),
             "fim": df_prophet_clean['ds'].max().strftime('%Y-%m-%d'),
             "num_pontos": len(df_prophet_clean),
         },
-        "metricas_backtest": {
-            "mae": round(float(mae), 2),
-            "mape_pct": round(float(mape), 2),
+        "metricas_ajuste_in_sample": {
+            "descricao": "modelo final avaliado contra os MESMOS dados usados pra treiná-lo — "
+                         "mede qualidade de ajuste, NÃO capacidade de generalização",
+            "mae": round(float(mae_in_sample), 2),
+            "mape_pct": round(float(mape_in_sample), 2),
         },
+        "metricas_walkforward_out_of_sample": (
+            {
+                "descricao": "modelo separado treinado só no início da série, avaliado contra "
+                             "semanas nunca vistas — este sim é um backtest de verdade",
+                "semanas_treino": len(df_wf_train),
+                "semanas_holdout": len(df_wf_holdout),
+                "mae": round(float(mae_walkforward), 2),
+                "mape_pct": round(float(mape_walkforward), 2),
+            }
+            if walkforward_ok
+            else {"descricao": "não calculado — histórico insuficiente para separar train/holdout"}
+        ),
         "intervalo_confianca_medio": round(float(avg_intervalo_confianca), 2),
         "premissas_e_limitacoes": [
             "Dados sintéticos — MAE/MAPE não representam performance em dados reais de produção",
@@ -238,9 +295,14 @@ with mlflow.start_run(run_name="prophet_cashflow_forecast") as run:
     print("\n" + "="*60)
     print("📊 RESULTADOS DO FORECAST")
     print("="*60)
-    print(f"\n🎯 Métricas de Acurácia (Histórico):")
-    print(f"  MAE:  R$ {mae:,.2f}")
-    print(f"  MAPE: {mape:.2f}%")
+    print(f"\n🎯 Ajuste in-sample (modelo final vs. dados de treino — qualidade de ajuste):")
+    print(f"  MAE:  R$ {mae_in_sample:,.2f}")
+    print(f"  MAPE: {mape_in_sample:.2f}%")
+    if walkforward_ok:
+        print(f"\n🎯 Backtest walk-forward out-of-sample (modelo separado vs. semanas nunca vistas):")
+        print(f"  Treino: {len(df_wf_train)} semanas | Holdout: {len(df_wf_holdout)} semanas")
+        print(f"  MAE:  R$ {mae_walkforward:,.2f}")
+        print(f"  MAPE: {mape_walkforward:.2f}%")
     print(f"\n📅 Período de Forecast:")
     print(f"  Início: {forecast_future['ds'].min().strftime('%Y-%m-%d')}")
     print(f"  Fim:    {forecast_future['ds'].max().strftime('%Y-%m-%d')}")
@@ -300,8 +362,11 @@ print("="*70)
 print("\n🎯 MODELO:")
 print(f"  Algoritmo: Prophet (Facebook)")
 print(f"  Horizon: 90 dias")
-print(f"  MAE: R$ {mae:,.2f}")
-print(f"  MAPE: {mape:.2f}%")
+print(f"  MAE (ajuste in-sample):  R$ {mae_in_sample:,.2f}")
+print(f"  MAPE (ajuste in-sample): {mape_in_sample:.2f}%")
+if walkforward_ok:
+    print(f"  MAE (backtest walk-forward out-of-sample):  R$ {mae_walkforward:,.2f}")
+    print(f"  MAPE (backtest walk-forward out-of-sample): {mape_walkforward:.2f}%")
 
 print("\n💰 PREVISÃO DE CASH FLOW:")
 for janela in ['0-30 dias', '31-60 dias', '61-90 dias']:

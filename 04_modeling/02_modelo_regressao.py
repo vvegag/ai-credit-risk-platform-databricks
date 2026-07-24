@@ -35,6 +35,7 @@ CATALOG = dbutils.widgets.get("catalog")
 
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import xgboost as xgb
@@ -97,15 +98,18 @@ print(f"✅ Train set: {X_train.shape} | Test set: {X_test.shape}")
 # COMMAND ----------
 
 # DBTITLE 1,4️⃣ Treinar XGBoost Regressor
-with mlflow.start_run(run_name="xgboost_regressao_valor_risco") as run:
+with mlflow.start_run(run_name=f"xgboost_regressao_valor_risco_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
 
-    model = xgb.XGBRegressor(
-        n_estimators=100,
-        max_depth=6,
-        learning_rate=0.1,
-        objective='reg:squarederror',
-        random_state=42
-    )
+    params = {
+        'n_estimators': 100,
+        'max_depth': 6,
+        'learning_rate': 0.1,
+        'objective': 'reg:squarederror',
+        'random_state': 42,
+    }
+    mlflow.log_params(params)
+
+    model = xgb.XGBRegressor(**params)
     model.fit(X_train, y_train)
 
     y_pred_train = model.predict(X_train)

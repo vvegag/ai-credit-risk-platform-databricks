@@ -14,6 +14,7 @@
 from pyspark.sql.functions import *
 from pyspark.ml.feature import VectorAssembler, StandardScaler
 from pyspark.ml.clustering import KMeans
+from pyspark.ml.evaluation import ClusteringEvaluator
 
 dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
 CATALOG = dbutils.widgets.get("catalog")
@@ -64,6 +65,20 @@ model = kmeans.fit(df_scaled)
 df_clustered = model.transform(df_scaled)
 
 print(f"  ✅ K-Means treinado (k=4) | WSSSE: {model.summary.trainingCost:.2f}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Validar Qualidade do Clustering (Silhouette Score)
+# k=4 foi escolhido pelos 4 perfis de negócio que fazem sentido pra ação de cobrança/CS
+# (Alto/Médio/Baixo Risco, Premium), não por busca de hiperparâmetro — o silhouette score
+# aqui não decide k, só documenta objetivamente quão bem separados os clusters resultantes
+# ficaram (varia de -1 a 1; > 0.5 é considerado razoável, > 0.7 forte). Métrica adicional,
+# não muda k nem o resultado do clustering acima.
+evaluator = ClusteringEvaluator(
+    featuresCol="features_scaled", predictionCol="cluster", metricName="silhouette"
+)
+silhouette_score = evaluator.evaluate(df_clustered)
+print(f"  📊 Silhouette Score (k=4): {silhouette_score:.4f}")
 
 # COMMAND ----------
 
