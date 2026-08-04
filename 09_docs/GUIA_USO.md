@@ -47,6 +47,48 @@ flow — prefer extending that notebook over writing a new scoring script from s
 
 ---
 
+## 📈 KS and Decile Table
+
+`04_modeling/01_modelo_classificacao_risco.py` evaluates the classifier with **KS
+(Kolmogorov-Smirnov)** and a **decile table**, alongside the AUC-ROC/precision/recall metrics
+already there. This isn't a random addition — KS is the market-standard metric for risk
+separation in credit and propensity models specifically (used more than AUC-ROC in this
+domain), and both showed up as the central ask in a real technical case for a Senior Data
+Scientist role at a bank.
+
+### What KS measures
+
+KS is the maximum distance between the cumulative distributions of the model's score for the
+two classes (adimplente vs. inadimplente) — computed with `scipy.stats.ks_2samp`, not a manual
+CDF implementation. A higher KS means the model separates the two populations further apart at
+their best-discriminating threshold. As a rule of thumb in credit risk: KS < 0.20 is weak,
+0.20–0.40 reasonable, 0.40–0.60 good, and above ~0.60–0.70 starts being **unusually high** for
+a real-world risk/propensity model — worth double-checking rather than celebrating.
+
+### How to read the decile table
+
+The test set is split into 10 groups by predicted score (`pd.qcut`), decile 1 = highest risk.
+For a model that's actually separating risk well, the delinquency rate should **decrease
+monotonically** from decile 1 to decile 10 — that's the same shape used in real credit scoring
+reports to sanity-check a score before deploying it. The notebook prints a warning (not a hard
+failure) if it finds inversions, since small per-decile samples can produce 1–2 non-monotonic
+steps without indicating a real problem.
+
+### Interpreting a suspiciously high test-set KS
+
+If test-set KS goes above `KS_TESTE_LIMIAR_SUSPEITO` (0.70, defined as a named constant in the
+notebook cell, not a magic number), the notebook prints an explicit alert. **This is not a new,
+disconnected check** — it's a second lens on the exact same risk the notebook's existing
+"Análise de Target Leakage" section (correlation > 0.95 against the target) already looks for.
+A test-set KS that's implausibly good is one of the most common real-world signals of target
+leakage or a proxy variable that only exists because of/after the outcome you're trying to
+predict — the same reasoning used to diagnose it applies regardless of which signal (raw
+correlation or KS) surfaced it first. On this project's synthetic data, a high KS can be
+expected (synthetic separation tends to be cleaner than real data) — the alert is a prompt to
+check, not a claim that something is broken.
+
+---
+
 ## 📊 Dashboards and Genie Space
 
 Dashboard exports live in `08_dashboards/exports/` (`.lvdash.json`) — import them via

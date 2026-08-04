@@ -541,6 +541,109 @@ print("   (Área sob a curva ROC - quanto maior, melhor a capacidade de discrimi
 
 # COMMAND ----------
 
+# DBTITLE 1,KS (Kolmogorov-Smirnov)
+# MAGIC %md
+# MAGIC ## KS (Kolmogorov-Smirnov) e Tabela de Decis
+# MAGIC KS é a métrica padrão de mercado para separação de risco em modelos de crédito/propensão
+# MAGIC (mais usada que AUC-ROC nesse domínio específico) — mede a maior distância entre as
+# MAGIC distribuições cumulativas de score dos adimplentes vs. inadimplentes. Complementa o
+# MAGIC AUC-ROC acima, não o substitui.
+
+# COMMAND ----------
+
+# DBTITLE 1,Calcular KS Treino vs. Teste
+from scipy.stats import ks_2samp
+
+def calcular_ks(y_true, y_score):
+    """KS = distância máxima entre as CDFs do score nas duas classes. Usa scipy.stats.ks_2samp
+    (teste de duas amostras) em vez de reimplementar CDF/distância manualmente."""
+    scores_classe_0 = y_score[y_true == 0]
+    scores_classe_1 = y_score[y_true == 1]
+    return ks_2samp(scores_classe_0, scores_classe_1).statistic
+
+# Precisa da probabilidade também no treino (só existia pra teste até aqui) para comparar
+# KS treino vs. teste — mesmo raciocínio de overfitting que accuracy/AUC treino vs. teste.
+y_train_pred_proba = model.predict_proba(X_train)[:, 1]
+
+ks_treino = calcular_ks(y_train.values, y_train_pred_proba)
+ks_teste = calcular_ks(y_test.values, y_pred_proba)
+ks_diff = ks_treino - ks_teste
+
+print("🎯 KS (Kolmogorov-Smirnov):")
+print(f"  KS Treino: {ks_treino:.4f}")
+print(f"  KS Teste:  {ks_teste:.4f}")
+print(f"  Diferença: {ks_diff:.4f} (grande = sinal de overfitting)")
+
+# COMMAND ----------
+
+# DBTITLE 1,Alerta de KS Suspeito
+# Limiar documentado, não número mágico solto: em modelos de risco/propensão reais, KS de
+# teste acima de ~0.70 é incomum — geralmente indica vazamento de dado ou variável proxy do
+# target, não um modelo genuinamente melhor. Esta é uma SEGUNDA lente sobre o mesmo risco já
+# coberto pela seção "Análise de Target Leakage" acima (que checa correlação bruta > 0.95) —
+# não uma checagem nova e desconexa. Em dados sintéticos como os deste projeto, um KS alto
+# pode ser esperado (separação mais "limpa" que dados reais) — o alerta é um lembrete pra
+# investigar, não uma afirmação de que há bug.
+KS_TESTE_LIMIAR_SUSPEITO = 0.70
+
+if ks_teste > KS_TESTE_LIMIAR_SUSPEITO:
+    print(f"\n⚠️ ALERTA: KS de teste ({ks_teste:.4f}) acima do limiar esperado para modelos "
+          f"de risco/propensão reais ({KS_TESTE_LIMIAR_SUSPEITO:.2f}).")
+    print("   Isso pode indicar vazamento de dado ou variável proxy do target — reveja a seção")
+    print("   'Análise de Target Leakage' acima (correlação > 0.95) como primeira checagem, e")
+    print("   considere se alguma feature carrega informação que só existiria depois do fato")
+    print("   gerador do target (ex: dados coletados após o cliente já estar inadimplente).")
+else:
+    print(f"\n✅ KS de teste ({ks_teste:.4f}) dentro da faixa esperada "
+          f"(≤ {KS_TESTE_LIMIAR_SUSPEITO:.2f}).")
+
+# COMMAND ----------
+
+# DBTITLE 1,Tabela de Decis
+# Divide o conjunto de TESTE em 10 grupos por faixa de score (decis), do maior risco (decil 1)
+# pro menor (decil 10) — mesmo padrão usado em modelos de crédito reais pra ver se o score
+# realmente separa risco de forma monotônica.
+df_decis = pd.DataFrame({'score': y_pred_proba, 'inadimplente': y_test.values})
+df_decis['decil'] = pd.qcut(df_decis['score'], 10, labels=False, duplicates='drop') + 1
+
+tabela_decis = df_decis.groupby('decil').agg(
+    qtd_observacoes=('inadimplente', 'count'),
+    taxa_inadimplencia=('inadimplente', 'mean'),
+).reset_index()
+tabela_decis['taxa_inadimplencia_pct'] = tabela_decis['taxa_inadimplencia'] * 100
+# Decil 10 = maior score/risco (pd.qcut ordena crescente) — inverte pra decil 1 = maior risco,
+# convenção mais comum em relatórios de crédito.
+tabela_decis = tabela_decis.sort_values('decil', ascending=False).reset_index(drop=True)
+tabela_decis['decil_risco'] = range(1, len(tabela_decis) + 1)
+
+print("📊 Tabela de Decis (decil 1 = maior risco):")
+display(tabela_decis[['decil_risco', 'qtd_observacoes', 'taxa_inadimplencia_pct']])
+
+# Validação de monotonicidade: taxa de inadimplência deve decrescer do decil 1 pro último
+taxas = tabela_decis['taxa_inadimplencia_pct'].values
+inversoes = sum(1 for i in range(len(taxas) - 1) if taxas[i] < taxas[i + 1])
+if inversoes == 0:
+    print("\n✅ Monotonicidade perfeita: taxa de inadimplência decresce em todos os decis.")
+else:
+    print(f"\n⚠️ {inversoes} inversão(ões) de monotonicidade encontrada(s) — comum em dados "
+          f"sintéticos/amostras pequenas por decil, não necessariamente um problema do modelo.")
+
+# COMMAND ----------
+
+# DBTITLE 1,Gráfico da Tabela de Decis
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.bar(tabela_decis['decil_risco'].astype(str), tabela_decis['taxa_inadimplencia_pct'],
+       color='steelblue', alpha=0.8)
+ax.set_xlabel('Decil (1 = maior risco)', fontsize=12)
+ax.set_ylabel('Taxa de Inadimplência (%)', fontsize=12)
+ax.set_title('Tabela de Decis - Score vs. Taxa de Inadimplência', fontsize=14, fontweight='bold')
+ax.grid(axis='y', alpha=0.3)
+plt.tight_layout()
+plt.savefig('/tmp/tabela_decis.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# COMMAND ----------
+
 # DBTITLE 1,Precision-Recall Curve
 # Precision-Recall Curve
 precision_curve, recall_curve, thresholds_pr = precision_recall_curve(y_test, y_pred_proba)
@@ -784,7 +887,11 @@ print(f"   - Optimal F1: {best_f1:.4f}")
 mlflow.log_metrics({
     'accuracy': accuracy, 'precision': precision, 'recall': recall,
     'f1_score': f1, 'auc_roc': roc_auc,
+    'ks_treino': ks_treino, 'ks_teste': ks_teste, 'ks_diff': ks_diff,
 })
+# Tabela de decis como artefato (não é um único número, não cabe em log_metric) — mesmo
+# padrão do Model Card em 04_modeling/03_modelo_forecast_cashflow.py (mlflow.log_dict).
+mlflow.log_dict(tabela_decis.to_dict(orient='records'), "tabela_decis.json")
 signature = infer_signature(X_train, model.predict(X_train))
 
 from mlflow.tracking import MlflowClient

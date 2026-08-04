@@ -29,7 +29,7 @@
 
 | Model | Type | Purpose |
 |-------|------|---------|
-| **Risk Classifier** | XGBoost + SHAP | Predict delinquency probability & risk class |
+| **Risk Classifier** | XGBoost + SHAP | Predict delinquency probability & risk class. Evaluated with KS (Kolmogorov-Smirnov) and a decile table alongside AUC-ROC — KS is the market-standard metric for risk separation in credit/propensity models (used more than AUC-ROC in this specific domain), and a suspiciously high test-set KS triggers an explicit alert cross-referencing the notebook's Target Leakage check (see [GUIA_USO.md](09_docs/GUIA_USO.md#-ks-and-decile-table) for how to read it) |
 | **Value Regressor** | XGBoost | Estimate monetary value at risk |
 | **Cashflow Forecast** | Prophet + external regressor | 90-day cashflow prediction with confidence intervals; an `evento_irregular` regressor isolates non-periodic events (Black Friday, year-end) from Prophet's automatic seasonality, and every run logs a Model Card artifact (assumptions, backtest window, MAE/MAPE) to MLflow for auditability (`04_modeling/03_modelo_forecast_cashflow.py`) |
 | **AutoML + LightGBM comparison** | Databricks AutoML, LightGBM | Benchmarks the manual XGBoost classifier against an AutoML baseline and LightGBM on the same features/split (`04_modeling/04_automl_lightgbm_comparacao.py`) |
