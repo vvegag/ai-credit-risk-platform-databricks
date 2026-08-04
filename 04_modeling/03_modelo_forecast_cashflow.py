@@ -228,9 +228,9 @@ with mlflow.start_run(run_name=f"prophet_cashflow_forecast_{datetime.now().strft
         print("⚠️ Histórico insuficiente para walk-forward backtest confiável — pulando essa etapa.")
 
     # Model Card: metodologia do forecast, logada como artefato JSON na mesma run.
-    # Resposta direta a um problema real relatado por um head de dados em entrevista:
-    # uma projeção de anos anteriores sem metodologia rastreável, que ninguém sabia
-    # reconstruir depois que a pessoa que a fez saiu da empresa. Qualquer pessoa (mesmo
+    # Resolve um problema comum em times de dados: uma projeção de anos anteriores sem
+    # metodologia rastreável, que ninguém sabia reconstruir depois que a pessoa que a fez
+    # saiu da empresa. Qualquer pessoa (mesmo
     # sem ter treinado o modelo) consegue auditar aqui as premissas, o período de
     # backtest e a acurácia usados para gerar o número.
     avg_intervalo_confianca = (forecast_future['yhat_upper'] - forecast_future['yhat_lower']).mean()

@@ -53,8 +53,7 @@ flow — prefer extending that notebook over writing a new scoring script from s
 (Kolmogorov-Smirnov)** and a **decile table**, alongside the AUC-ROC/precision/recall metrics
 already there. This isn't a random addition — KS is the market-standard metric for risk
 separation in credit and propensity models specifically (used more than AUC-ROC in this
-domain), and both showed up as the central ask in a real technical case for a Senior Data
-Scientist role at a bank.
+domain).
 
 ### What KS measures
 
