@@ -20,7 +20,7 @@
 
 # DBTITLE 1,Instalação de Bibliotecas
 # xgboost não vem pré-instalado em compute serverless (diferente de clusters com ML Runtime)
-%pip install xgboost==2.0.3 mlflow==2.9.2 scikit-learn==1.3.2 --quiet
+%pip install xgboost==2.0.3 mlflow==2.9.2 scikit-learn==1.3.2 optuna==3.6.1 --quiet
 
 # COMMAND ----------
 
@@ -97,17 +97,70 @@ print(f"✅ Train set: {X_train.shape} | Test set: {X_test.shape}")
 
 # COMMAND ----------
 
+# DBTITLE 1,3️⃣.1 Otimização de Hiperparâmetros (Optuna + Cross-Validation)
+# Mesmo padrão do classificador (04_modeling/01_modelo_classificacao_risco.py): busca
+# bayesiana com K-Fold (aqui sem stratify — é regressão), minimizando o MAE médio de
+# validação em vez de um único split. O modelo final (célula seguinte) é retreinado no
+# X_train completo com os melhores parâmetros encontrados aqui.
+import optuna
+from optuna.samplers import TPESampler
+from sklearn.model_selection import KFold
+
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+N_TRIALS = 30
+
+def objective(trial):
+    trial_params = {
+        'max_depth': trial.suggest_int('max_depth', 3, 10),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+        'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+        'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+        'objective': 'reg:squarederror',
+        'random_state': 42,
+    }
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    fold_mae_scores = []
+
+    for fold_train_idx, fold_val_idx in kf.split(X_train):
+        X_fold_train = X_train.iloc[fold_train_idx]
+        X_fold_val = X_train.iloc[fold_val_idx]
+        y_fold_train = y_train.iloc[fold_train_idx]
+        y_fold_val = y_train.iloc[fold_val_idx]
+
+        fold_model = xgb.XGBRegressor(**trial_params)
+        fold_model.fit(X_fold_train, y_fold_train)
+        fold_pred = fold_model.predict(X_fold_val)
+        fold_mae_scores.append(mean_absolute_error(y_fold_val, fold_pred))
+
+    return np.mean(fold_mae_scores)
+
+print("🔍 Buscando hiperparâmetros (Optuna + 5-fold CV)...")
+study = optuna.create_study(direction='minimize', sampler=TPESampler(seed=42))
+study.optimize(objective, n_trials=N_TRIALS, show_progress_bar=False)
+
+print(f"\n✅ Busca concluída ({N_TRIALS} trials)")
+print(f"🎯 Melhor MAE médio (5-fold CV): R$ {study.best_value:,.2f}")
+print(f"\n📋 Melhores hiperparâmetros encontrados:")
+for k, v in study.best_params.items():
+    print(f"  {k}: {v}")
+
+# COMMAND ----------
+
 # DBTITLE 1,4️⃣ Treinar XGBoost Regressor
 with mlflow.start_run(run_name=f"xgboost_regressao_valor_risco_{datetime.now().strftime('%Y%m%d_%H%M%S')}") as run:
 
     params = {
-        'n_estimators': 100,
-        'max_depth': 6,
-        'learning_rate': 0.1,
+        **study.best_params,
         'objective': 'reg:squarederror',
         'random_state': 42,
     }
     mlflow.log_params(params)
+    mlflow.log_metric('cv_mae_mean', study.best_value)
+    mlflow.log_param('optuna_n_trials', N_TRIALS)
 
     model = xgb.XGBRegressor(**params)
     model.fit(X_train, y_train)

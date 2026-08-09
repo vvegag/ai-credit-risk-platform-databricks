@@ -47,7 +47,7 @@
 
 # DBTITLE 1,Instalação de Bibliotecas
 # Instalação de bibliotecas necessárias
-%pip install xgboost==2.0.3 shap==0.44.0 mlflow==2.9.2 scikit-learn==1.3.2 seaborn==0.13.0 --quiet
+%pip install xgboost==2.0.3 shap==0.44.0 mlflow==2.9.2 scikit-learn==1.3.2 seaborn==0.13.0 optuna==3.6.1 --quiet
 
 # COMMAND ----------
 
@@ -383,6 +383,76 @@ print("   (Usado para lidar com desbalanceamento de classes)")
 
 # COMMAND ----------
 
+# DBTITLE 1,Otimização de Hiperparâmetros (Optuna + Cross-Validation)
+# MAGIC %md
+# MAGIC ## 4.1 Otimização de Hiperparâmetros
+# MAGIC Busca bayesiana (Optuna, `TPESampler`) com validação cruzada estratificada de 5 folds —
+# MAGIC resolve tuning e cross-validation na mesma peça, em vez de duas etapas desconectadas. Cada
+# MAGIC combinação de hiperparâmetros é avaliada pela média do AUC-ROC nos 5 folds de validação
+# MAGIC (não um único split), reduzindo o risco de escolher parâmetros que só foram bons por sorte
+# MAGIC de split. O modelo final (célula seguinte) é retreinado no `X_train` completo com os
+# MAGIC melhores parâmetros encontrados aqui, e avaliado no `X_test` já existente — o resto do
+# MAGIC notebook (predições, SHAP, KS, MLflow, registro) não muda.
+
+# COMMAND ----------
+
+# DBTITLE 1,Rodar Busca de Hiperparâmetros
+import optuna
+from optuna.samplers import TPESampler
+from sklearn.model_selection import StratifiedKFold
+
+optuna.logging.set_verbosity(optuna.logging.WARNING)  # evita poluir o output do notebook
+
+N_TRIALS = 30  # moderado — roda rápido no volume sintético atual; aumente se quiser buscar mais fundo
+
+def objective(trial):
+    trial_params = {
+        'max_depth': trial.suggest_int('max_depth', 3, 10),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+        'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+        'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
+        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+        'eval_metric': 'logloss',
+        'objective': 'binary:logistic',
+        'random_state': 42,
+    }
+
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    fold_auc_scores = []
+
+    for fold_train_idx, fold_val_idx in skf.split(X_train, y_train):
+        X_fold_train = X_train.iloc[fold_train_idx]
+        X_fold_val = X_train.iloc[fold_val_idx]
+        y_fold_train = y_train.iloc[fold_train_idx]
+        y_fold_val = y_train.iloc[fold_val_idx]
+
+        # scale_pos_weight recalculado por fold — a proporção de classes pode variar
+        # levemente entre folds, mesmo com StratifiedKFold.
+        fold_class_counts = np.bincount(y_fold_train)
+        fold_scale_pos_weight = (
+            fold_class_counts[0] / fold_class_counts[1] if len(fold_class_counts) > 1 else 1.0
+        )
+
+        fold_model = XGBClassifier(**trial_params, scale_pos_weight=fold_scale_pos_weight)
+        fold_model.fit(X_fold_train, y_fold_train)
+        fold_proba = fold_model.predict_proba(X_fold_val)[:, 1]
+        fold_auc_scores.append(roc_auc_score(y_fold_val, fold_proba))
+
+    return np.mean(fold_auc_scores)
+
+print("🔍 Buscando hiperparâmetros (Optuna + 5-fold CV)...")
+study = optuna.create_study(direction='maximize', sampler=TPESampler(seed=42))
+study.optimize(objective, n_trials=N_TRIALS, show_progress_bar=False)
+
+print(f"\n✅ Busca concluída ({N_TRIALS} trials)")
+print(f"🎯 Melhor AUC-ROC médio (5-fold CV): {study.best_value:.4f}")
+print(f"\n📋 Melhores hiperparâmetros encontrados:")
+for k, v in study.best_params.items():
+    print(f"  {k}: {v}")
+
+# COMMAND ----------
+
 # DBTITLE 1,Treinamento do Modelo
 # MAGIC %md
 # MAGIC ## 5. Treinamento do Modelo XGBoost
@@ -413,11 +483,12 @@ print(f"✅ MLflow configurado: {_experiment_name}")
 # COMMAND ----------
 
 # DBTITLE 1,Treinar Modelo XGBoost
-# Parâmetros do modelo
+# Parâmetros do modelo — vindos da busca Optuna (célula anterior), não mais hardcoded.
+# scale_pos_weight/random_state/eval_metric/objective ficam fixos (não fazem parte da busca:
+# scale_pos_weight é calculado do dataset, os outros três são escolhas de configuração, não
+# hiperparâmetros a otimizar).
 params = {
-    'n_estimators': 100,
-    'max_depth': 6,
-    'learning_rate': 0.1,
+    **study.best_params,
     'scale_pos_weight': scale_pos_weight,  # Para lidar com desbalanceamento
     'random_state': 42,
     'eval_metric': 'logloss',
@@ -440,6 +511,8 @@ mlflow.set_experiment(f"/Users/{spark.sql('SELECT current_user()').collect()[0][
 
 mlflow_run = mlflow.start_run(run_name=f"classificacao_risco_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 mlflow.log_params(params)
+mlflow.log_metric('cv_auc_mean', study.best_value)  # métrica usada pra escolher os hiperparâmetros
+mlflow.log_param('optuna_n_trials', N_TRIALS)
 
 model = XGBClassifier(**params)
 model.fit(
