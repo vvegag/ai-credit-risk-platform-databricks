@@ -75,6 +75,11 @@ and not a loose pickle file. Promotion uses `Champion`/`Challenger` **aliases**
   predictions table always reflects whichever model is actually promoted, not whatever was last trained
   in memory.
 
+`04_modeling/02_modelo_regressao.py` registers to its own entry (`credit_risk.gold.credit_risk_regressor`)
+using the same log-model-with-`registered_model_name` + Volume-UC-fallback pattern, and bootstraps a first
+Champion the same way. Unlike the classifier, there is no dedicated retraining/promotion pipeline for the
+regressor yet — the Champion alias is set once (bootstrap) and not compared/re-promoted on later runs.
+
 ### 6. MLOps (`05_mlops/01_mlops_pipeline.py`) and Monitoring (`07_monitoring/`)
 Two complementary layers: a fuller MLOps pipeline that retrains, checks drift, and logs
 metrics/alerts/versions to dedicated Gold tables on every run; and a lightweight, standalone

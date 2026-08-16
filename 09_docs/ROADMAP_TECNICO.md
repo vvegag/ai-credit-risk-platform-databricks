@@ -42,7 +42,7 @@ alias Champion/Challenger (ver `MODEL_REGISTRY_NAME`, `MlflowClient.set_register
 padrão de fallback pra Volume UC se o registro falhar — reusar esse mesmo padrão, não inventar
 um novo).
 
-- [ ] Registrar o regressor (`04_modeling/02_modelo_regressao.py`) no UC Model Registry como
+- [x] Registrar o regressor (`04_modeling/02_modelo_regressao.py`) no UC Model Registry como
       `credit_risk_regressor`, com fallback pra Volume UC.
 - [ ] Registrar o modelo de forecast (`04_modeling/03_modelo_forecast_cashflow.py`) no UC
       Model Registry como `credit_risk_forecast` (usar `mlflow.prophet.log_model` já
