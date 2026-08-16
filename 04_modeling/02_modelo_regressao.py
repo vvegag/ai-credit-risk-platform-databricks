@@ -41,12 +41,19 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import xgboost as xgb
 import mlflow
 import mlflow.xgboost
+from mlflow.models.signature import infer_signature
 
 # Sem isso, mlflow.start_run() tenta resolver o registry URI padrão via config Spark
 # (spark.mlflow.modelRegistryUri), que não existe em serverless/Spark Connect
 # (CONFIG_NOT_AVAILABLE) -- mesmo problema já visto em 04_modeling/01_ e 05_mlops/01_.
 mlflow.set_registry_uri("databricks-uc")
 mlflow.set_experiment(f"/Shared/{CATALOG}_regressao_valor_risco")
+
+# Mesmo padrão de nome/registro usado por 04_modeling/01_modelo_classificacao_risco.py —
+# entrada própria no UC Model Registry (não compartilha nome com o classificador).
+MODEL_NAME = "credit_risk_regressor"
+MODEL_REGISTRY_NAME = f"{CATALOG}.gold.{MODEL_NAME}"
+FALLBACK_MODEL_PATH = f"/Volumes/{CATALOG}/gold/model_fallback/{MODEL_NAME}"
 
 print("✅ Bibliotecas carregadas")
 print(f"📦 XGBoost version: {xgb.__version__}")
@@ -177,13 +184,58 @@ with mlflow.start_run(run_name=f"xgboost_regressao_valor_risco_{datetime.now().s
         "r2_test": r2_score(y_test, y_pred_test),
     }
     mlflow.log_metrics(metrics)
-    mlflow.xgboost.log_model(model, "model")
 
     feature_importance = pd.DataFrame({
         'feature': X.columns,
         'importance': model.feature_importances_
     }).sort_values('importance', ascending=False)
     mlflow.log_dict(feature_importance.to_dict(), "feature_importance.json")
+
+    # Registro no Unity Catalog Model Registry (mlflow.xgboost.log_model com
+    # registered_model_name, não um pickle solto em /tmp) — mesmo padrão de
+    # 04_modeling/01_modelo_classificacao_risco.py, reaplicado aqui para o regressor.
+    #
+    # Fallback: em alguns workspaces o storage interno do Unity Catalog Model Registry pode
+    # falhar por motivo de infraestrutura alheio ao código (ex: permissão AWS S3 quebrada na
+    # conta). Se o registro falhar por QUALQUER motivo, salva o modelo num Volume UC — sem
+    # versionamento nem alias Champion, mas garante que o notebook não trave.
+    signature = infer_signature(X_train, model.predict(X_train))
+
+    from mlflow.tracking import MlflowClient
+    _client = MlflowClient()
+    _registry_ok = False
+
+    try:
+        model_info = mlflow.xgboost.log_model(
+            model, "model",
+            signature=signature,
+            registered_model_name=MODEL_REGISTRY_NAME,
+        )
+        print(f"✅ Modelo registrado no UC Model Registry: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version}")
+
+        # Bootstrap: se este é o primeiro modelo registrado (ainda não existe alias Champion),
+        # promove-o como Champion inicial. Diferente do classificador, hoje não existe um
+        # 05_mlops/ dedicado ao regressor que faça promoções seguintes com comparação de
+        # métricas — esse bootstrap é a única promoção automática até que esse pipeline exista.
+        try:
+            _client.get_model_version_by_alias(MODEL_REGISTRY_NAME, "Champion")
+            print("ℹ️ Já existe um Champion registrado — mantendo-o.")
+        except Exception:
+            _client.set_registered_model_alias(MODEL_REGISTRY_NAME, "Champion", model_info.registered_model_version)
+            print(f"🏆 Nenhum Champion prévio — v{model_info.registered_model_version} promovido a Champion inicial")
+
+        _registry_ok = True
+
+    except Exception as e:
+        print(f"⚠️ Falha ao registrar no UC Model Registry ({type(e).__name__}: {e})")
+        print(f"↳ Fallback: salvando o modelo direto no Volume {FALLBACK_MODEL_PATH}")
+        spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.model_fallback")
+        try:
+            dbutils.fs.rm(FALLBACK_MODEL_PATH, recurse=True)  # save_model exige diretório inexistente
+        except Exception:
+            pass  # não existia ainda, tudo bem
+        mlflow.xgboost.save_model(model, FALLBACK_MODEL_PATH)
+        print(f"✅ Modelo salvo em {FALLBACK_MODEL_PATH} (sem Model Registry — sem alias Champion)")
 
     run_id = run.info.run_id
 
@@ -193,6 +245,10 @@ with mlflow.start_run(run_name=f"xgboost_regressao_valor_risco_{datetime.now().s
     for k, v in metrics.items():
         print(f"  {k}: {v:,.2f}" if "r2" not in k else f"  {k}: {v:.4f}")
     print(f"\n📦 Run ID: {run_id}")
+    if _registry_ok:
+        print(f"📦 Modelo registrado: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version}")
+    else:
+        print(f"📦 Modelo salvo em fallback: {FALLBACK_MODEL_PATH}")
     print("\n🏆 Top 5 Features:")
     print(feature_importance.head())
     print("="*60)
