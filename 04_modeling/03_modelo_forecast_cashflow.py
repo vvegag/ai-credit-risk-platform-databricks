@@ -53,6 +53,13 @@ CATALOG = dbutils.widgets.get("catalog")
 mlflow.set_registry_uri("databricks-uc")
 mlflow.set_experiment(f"/Shared/{CATALOG}_forecast_cashflow")
 
+# Mesmo padrão de nome/registro usado por 04_modeling/01_modelo_classificacao_risco.py e
+# 02_modelo_regressao.py — entrada própria no UC Model Registry (não compartilha nome
+# com o classificador nem com o regressor).
+MODEL_NAME = "credit_risk_forecast"
+MODEL_REGISTRY_NAME = f"{CATALOG}.gold.{MODEL_NAME}"
+FALLBACK_MODEL_PATH = f"/Volumes/{CATALOG}/gold/model_fallback/{MODEL_NAME}"
+
 print("✅ Bibliotecas carregadas")
 print(f"📦 MLflow version: {mlflow.__version__}")
 
@@ -183,8 +190,49 @@ with mlflow.start_run(run_name=f"prophet_cashflow_forecast_{datetime.now().strft
     mlflow.log_metric("mape_in_sample", mape_in_sample)
     mlflow.log_param("forecast_horizon_days", 90)
 
-    # Salvar modelo como artefato
-    mlflow.prophet.log_model(model, "prophet_model")
+    # Registro no Unity Catalog Model Registry (mlflow.prophet.log_model com
+    # registered_model_name, não só um artefato solto) — mesmo padrão de
+    # 04_modeling/01_modelo_classificacao_risco.py e 02_modelo_regressao.py, reaplicado
+    # aqui para o modelo de forecast.
+    #
+    # Fallback: em alguns workspaces o storage interno do Unity Catalog Model Registry pode
+    # falhar por motivo de infraestrutura alheio ao código (ex: permissão AWS S3 quebrada na
+    # conta). Se o registro falhar por QUALQUER motivo, salva o modelo num Volume UC — sem
+    # versionamento nem alias Champion, mas garante que o notebook não trave.
+    from mlflow.tracking import MlflowClient
+    _client = MlflowClient()
+    _registry_ok = False
+
+    try:
+        model_info = mlflow.prophet.log_model(
+            model, "prophet_model",
+            registered_model_name=MODEL_REGISTRY_NAME,
+        )
+        print(f"✅ Modelo registrado no UC Model Registry: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version}")
+
+        # Bootstrap: se este é o primeiro modelo registrado (ainda não existe alias Champion),
+        # promove-o como Champion inicial. Assim como no regressor, hoje não existe um
+        # 05_mlops/ dedicado ao forecast que faça promoções seguintes com comparação de
+        # métricas — esse bootstrap é a única promoção automática até que esse pipeline exista.
+        try:
+            _client.get_model_version_by_alias(MODEL_REGISTRY_NAME, "Champion")
+            print("ℹ️ Já existe um Champion registrado — mantendo-o.")
+        except Exception:
+            _client.set_registered_model_alias(MODEL_REGISTRY_NAME, "Champion", model_info.registered_model_version)
+            print(f"🏆 Nenhum Champion prévio — v{model_info.registered_model_version} promovido a Champion inicial")
+
+        _registry_ok = True
+
+    except Exception as e:
+        print(f"⚠️ Falha ao registrar no UC Model Registry ({type(e).__name__}: {e})")
+        print(f"↳ Fallback: salvando o modelo direto no Volume {FALLBACK_MODEL_PATH}")
+        spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.gold.model_fallback")
+        try:
+            dbutils.fs.rm(FALLBACK_MODEL_PATH, recurse=True)  # save_model exige diretório inexistente
+        except Exception:
+            pass  # não existia ainda, tudo bem
+        mlflow.prophet.save_model(model, FALLBACK_MODEL_PATH)
+        print(f"✅ Modelo salvo em {FALLBACK_MODEL_PATH} (sem Model Registry — sem alias Champion)")
 
     # Backtest WALK-FORWARD de verdade: treina um modelo separado só nas primeiras ~80% das
     # semanas, prevê as últimas ~20% (nunca vistas por esse modelo) e compara contra o valor
@@ -313,6 +361,10 @@ with mlflow.start_run(run_name=f"prophet_cashflow_forecast_{datetime.now().strft
     print(f"  Limite Superior: R$ {forecast_future['yhat_upper'].sum():,.2f}")
     print(f"\n📄 Model Card salvo como artefato MLflow: model_card.json")
     print(f"\n📦 Run ID: {run_id}")
+    if _registry_ok:
+        print(f"📦 Modelo registrado: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version}")
+    else:
+        print(f"📦 Modelo salvo em fallback: {FALLBACK_MODEL_PATH}")
     print("="*60)
 
 # COMMAND ----------
@@ -383,6 +435,10 @@ else:
 
 print("\n💾 DADOS SALVOS:")
 print(f"  ✅ {CATALOG}.gold.forecast_cashflow")
+if _registry_ok:
+    print(f"  ✅ Modelo registrado: {MODEL_REGISTRY_NAME} v{model_info.registered_model_version} (UC Model Registry)")
+else:
+    print(f"  ⚠️ Modelo salvo em fallback: {FALLBACK_MODEL_PATH} (UC Model Registry indisponível nesta conta)")
 
 print("\n" + "="*70)
 
