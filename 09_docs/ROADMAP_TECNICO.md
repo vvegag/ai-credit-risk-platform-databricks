@@ -44,7 +44,7 @@ um novo).
 
 - [x] Registrar o regressor (`04_modeling/02_modelo_regressao.py`) no UC Model Registry como
       `credit_risk_regressor`, com fallback pra Volume UC.
-- [ ] Registrar o modelo de forecast (`04_modeling/03_modelo_forecast_cashflow.py`) no UC
+- [x] Registrar o modelo de forecast (`04_modeling/03_modelo_forecast_cashflow.py`) no UC
       Model Registry como `credit_risk_forecast` (usar `mlflow.prophet.log_model` já
       existente, só adicionar `registered_model_name`).
 - [ ] Registrar o LightGBM (`04_modeling/04_automl_lightgbm_comparacao.py`) — avaliar se faz
