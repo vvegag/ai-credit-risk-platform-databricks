@@ -244,3 +244,18 @@ print("="*70)
 # MAGIC - O modelo que vai pro Model Registry como Champion continua sendo decidido por
 # MAGIC   `05_mlops/01_mlops_pipeline.py` — este notebook é exploratório/comparativo, não substitui
 # MAGIC   o pipeline de promoção.
+# MAGIC
+# MAGIC ### Decisão de governança: LightGBM NÃO é registrado no UC Model Registry
+# MAGIC Diferente do regressor (`02_modelo_regressao.py`) e do forecast (`03_modelo_forecast_cashflow.py`),
+# MAGIC que registram em entradas próprias porque resolvem problemas de negócio *diferentes* do
+# MAGIC classificador, o LightGBM treinado aqui resolve o **mesmo** problema (classificação de
+# MAGIC inadimplência) que já tem um dono de governança — `credit_risk.gold.credit_risk_classifier`,
+# MAGIC com ciclo de retreino/promoção Champion/Challenger próprio em `05_mlops/01_mlops_pipeline.py`.
+# MAGIC Registrar o LightGBM como uma segunda entrada criaria um modelo candidato pro mesmo problema
+# MAGIC sem processo de comparação/promoção nenhum apontando pra ele — risco de dois modelos
+# MAGIC "de classificação de risco" desencontrados no registry, um governado e outro não.
+# MAGIC A run já fica registrada no MLflow Experiment Tracking (rastreável, comparável, reproduzível)
+# MAGIC — o que falta aqui é registry, não tracking. Se um dia o LightGBM for candidato real a
+# MAGIC produção, o caminho correto é ele entrar no fluxo de comparação do `05_mlops/01_mlops_pipeline.py`
+# MAGIC como um Challenger contra o Champion atual, não ganhar uma entrada de registry paralela e
+# MAGIC desgovernada.

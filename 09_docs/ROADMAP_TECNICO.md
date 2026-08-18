@@ -47,9 +47,13 @@ um novo).
 - [x] Registrar o modelo de forecast (`04_modeling/03_modelo_forecast_cashflow.py`) no UC
       Model Registry como `credit_risk_forecast` (usar `mlflow.prophet.log_model` já
       existente, só adicionar `registered_model_name`).
-- [ ] Registrar o LightGBM (`04_modeling/04_automl_lightgbm_comparacao.py`) — avaliar se faz
+- [x] Registrar o LightGBM (`04_modeling/04_automl_lightgbm_comparacao.py`) — avaliar se faz
       sentido registrar como modelo próprio ou só documentar que ele é exploratório/
       comparativo e não deveria ir pro registry (decisão a documentar, não só código).
+      **Decisão**: não registrar — mesmo problema de negócio do `credit_risk_classifier`
+      (já governado por Champion/Challenger em `05_mlops/`), registrar separadamente criaria
+      um segundo modelo desgovernado para o mesmo problema. Documentado no notebook e em
+      `ARQUITETURA.md`.
 
 ## Fase C — Testes mais profundos (além do estático)
 

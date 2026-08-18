@@ -79,6 +79,19 @@ and not a loose pickle file. Promotion uses `Champion`/`Challenger` **aliases**
 using the same log-model-with-`registered_model_name` + Volume-UC-fallback pattern, and bootstraps a first
 Champion the same way. Unlike the classifier, there is no dedicated retraining/promotion pipeline for the
 regressor yet — the Champion alias is set once (bootstrap) and not compared/re-promoted on later runs.
+`04_modeling/03_modelo_forecast_cashflow.py` follows the same pattern for its own entry
+(`credit_risk.gold.credit_risk_forecast`).
+
+**`04_modeling/04_automl_lightgbm_comparacao.py` deliberately does *not* register to the Model
+Registry.** Unlike the regressor and forecast notebooks, which solve different business problems
+and therefore warrant their own registry entries, the LightGBM model there targets the *same*
+problem as `credit_risk_classifier` (delinquency classification) — a problem that already has a
+governed Champion/Challenger owner in `05_mlops/01_mlops_pipeline.py`. Registering it separately
+would create a second, ungoverned candidate for the same problem with no comparison/promotion
+process pointing at it. The run is still fully tracked in the MLflow Experiment (comparable,
+reproducible) — what's intentionally missing is a registry entry, not tracking. If LightGBM ever
+becomes a real production candidate, it should enter as a Challenger in
+`05_mlops/01_mlops_pipeline.py`'s existing comparison flow, not gain a parallel registry entry.
 
 ### 6. MLOps (`05_mlops/01_mlops_pipeline.py`) and Monitoring (`07_monitoring/`)
 Two complementary layers: a fuller MLOps pipeline that retrains, checks drift, and logs
