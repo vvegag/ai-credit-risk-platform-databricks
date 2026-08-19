@@ -128,7 +128,9 @@ ai-credit-risk-platform-databricks/
 │   ├── src/                            # Importable package: config, embeddings, vector_search, rag_agent
 │   ├── deploy/                         # Model serving deployment script
 │   └── tests/                          # Tests requiring a live Databricks workspace (not mocked)
-├── tests/                              # Static-analysis regression tests (pytest, no Spark/Databricks needed)
+├── tests/                              # pytest suite: static-analysis + local-Spark tests (no Databricks needed)
+│   ├── conftest.py                     # Local SparkSession (`local[1]`) + dbutils.widgets mock fixtures
+│   ├── test_fixtures_smoke.py          # Smoke tests for the conftest.py fixtures themselves
 │   └── test_leakage_consistency.py     # Catches target-leakage regressions across all modeling notebooks
 ├── .github/workflows/tests.yml         # CI: runs `pytest tests/` on every push/PR
 ├── .gitignore
