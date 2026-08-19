@@ -61,7 +61,7 @@ um novo).
 Spark/Databricks. Testar a lógica de transformação de dados de verdade precisa mockar
 `dbutils`/`spark`.
 
-- [ ] Configurar uma `SparkSession` local (`SparkSession.builder.master("local[1]")`) +
+- [x] Configurar uma `SparkSession` local (`SparkSession.builder.master("local[1]")`) +
       mock simples de `dbutils.widgets` utilizável nos testes.
 - [ ] Testes unitários pra lógica de `03_feature_engineering/03_feature_store_rfm.py` (scoring
       RFM) — começar por aqui, não pelos 20 notebooks de uma vez.

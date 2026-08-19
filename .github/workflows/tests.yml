@@ -1,6 +1,7 @@
 name: Tests
 
-# Roda a suíte de testes leve (análise estática, sem Spark/Databricks) a cada push/PR.
+# Roda a suíte de testes leve a cada push/PR: análise estática (sem Spark/Databricks) +
+# testes que usam uma SparkSession local (`tests/conftest.py`), não um workspace real.
 # Não substitui validação no workspace real — os notebooks continuam exigindo Databricks
 # para rodar de fato — mas pega regressões estruturais (ex: leakage) antes do merge.
 on:
@@ -19,8 +20,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
       - name: Install test dependencies
-        run: pip install pytest
+        run: pip install pytest pyspark
 
       - name: Run tests
         run: pytest tests/ -v
