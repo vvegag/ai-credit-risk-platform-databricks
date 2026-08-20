@@ -12,8 +12,13 @@ extraídas dos notebooks, ou trechos equivalentes), sem precisar de um workspace
   `dbutils.widgets.get(nome)` (confirmado varrendo todos os usos de `dbutils.widgets.` no
   repositório — nenhum notebook usa `dropdown`/`combobox`/`multiselect`).
 """
+import ast
+from pathlib import Path
+
 import pytest
 from pyspark.sql import SparkSession
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="session")
@@ -60,3 +65,34 @@ class MockDbutils:
 @pytest.fixture
 def mock_dbutils():
     return MockDbutils()
+
+
+def load_notebook_functions(rel_path, function_names):
+    """Extrai definições de função puras de um notebook Databricks (`.py`) sem executar o
+    resto do script — que depende de `dbutils.widgets`/`spark.table` reais e não roda fora
+    de um workspace. Usa AST pra isolar só os `FunctionDef` pedidos (e os `import`s do
+    módulo, dos quais eles dependem) em vez de duplicar a lógica no teste, que divergiria do
+    notebook real com o tempo (o mesmo risco que motivou `test_leakage_consistency.py`)."""
+    file_path = REPO_ROOT / rel_path
+    source = file_path.read_text(encoding="utf-8")
+    lines = [
+        ("# " + line if line.strip().startswith("%pip") else line)
+        for line in source.split("\n")
+    ]
+    tree = ast.parse("\n".join(lines), filename=str(file_path))
+
+    imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    wanted = set(function_names)
+    functions = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in wanted
+    ]
+    missing = wanted - {node.name for node in functions}
+    assert not missing, f"{rel_path}: funções não encontradas: {sorted(missing)}"
+
+    module = ast.Module(body=imports + functions, type_ignores=[])
+    ast.fix_missing_locations(module)
+
+    namespace = {}
+    exec(compile(module, filename=str(file_path), mode="exec"), namespace)
+    return {name: namespace[name] for name in function_names}

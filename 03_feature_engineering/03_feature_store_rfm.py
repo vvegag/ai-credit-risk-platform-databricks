@@ -36,12 +36,41 @@ print(f"✅ {df_features.count():,} clientes carregados")
 
 # COMMAND ----------
 
+# DBTITLE 1,Funções de Scoring RFM (puras, testáveis)
+def calcular_recency(df_faturas):
+    """Dias desde a última fatura por cliente. Função pura pra ser testável isoladamente
+    (ver tests/test_feature_store_rfm.py, Fase C do roadmap técnico)."""
+    return df_faturas.groupBy("id_cliente").agg(
+        datediff(current_date(), max("data_emissao")).alias("recency_dias")
+    )
+
+
+def aplicar_rfm_score(df_rfm):
+    """Adiciona rfm_score (1-5, sendo 5 o melhor) e categoria_rfm a partir de
+    recency_dias. Função pura pra ser testável isoladamente
+    (ver tests/test_feature_store_rfm.py, Fase C do roadmap técnico)."""
+    df_rfm = df_rfm.withColumn(
+        "rfm_score",
+        when(col("recency_dias") < 30, 5)
+        .when(col("recency_dias") < 60, 4)
+        .when(col("recency_dias") < 90, 3)
+        .when(col("recency_dias") < 180, 2)
+        .otherwise(1)
+    )
+    df_rfm = df_rfm.withColumn(
+        "categoria_rfm",
+        when(col("rfm_score") >= 4, "Premium")
+        .when(col("rfm_score") == 3, "Regular")
+        .otherwise("Em Risco")
+    )
+    return df_rfm
+
+# COMMAND ----------
+
 # DBTITLE 1,Calcular Recency
 # Calcular Recency: dias desde última fatura
 print("📅 Calculando Recency...")
-recency = df_faturas.groupBy("id_cliente").agg(
-    datediff(current_date(), max("data_emissao")).alias("recency_dias")
-)
+recency = calcular_recency(df_faturas)
 
 # Join
 df_rfm = df_features.join(recency, "id_cliente", "left")
@@ -52,24 +81,9 @@ print()
 # COMMAND ----------
 
 # DBTITLE 1,RFM Score e Categorias
-# RFM Score (1-5, sendo 5 o melhor)
+# RFM Score e categoria (Premium/Regular/Em Risco) a partir do recency_dias
 print("🎯 Calculando RFM Score...")
-df_rfm = df_rfm.withColumn(
-    "rfm_score",
-    when(col("recency_dias") < 30, 5)
-    .when(col("recency_dias") < 60, 4)
-    .when(col("recency_dias") < 90, 3)
-    .when(col("recency_dias") < 180, 2)
-    .otherwise(1)
-)
-
-# Categoria RFM
-df_rfm = df_rfm.withColumn(
-    "categoria_rfm",
-    when(col("rfm_score") >= 4, "Premium")
-    .when(col("rfm_score") == 3, "Regular")
-    .otherwise("Em Risco")
-)
+df_rfm = aplicar_rfm_score(df_rfm)
 
 print("  ✅ RFM Score e categorias criadas")
 print()

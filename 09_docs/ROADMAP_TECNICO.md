@@ -63,7 +63,7 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
 
 - [x] Configurar uma `SparkSession` local (`SparkSession.builder.master("local[1]")`) +
       mock simples de `dbutils.widgets` utilizável nos testes.
-- [ ] Testes unitários pra lógica de `03_feature_engineering/03_feature_store_rfm.py` (scoring
+- [x] Testes unitários pra lógica de `03_feature_engineering/03_feature_store_rfm.py` (scoring
       RFM) — começar por aqui, não pelos 20 notebooks de uma vez.
 - [ ] Testes unitários pra lógica de `03_feature_engineering/04_clustering_features_ml.py`
       (validar que o silhouette score é calculado corretamente sobre um dataset sintético
