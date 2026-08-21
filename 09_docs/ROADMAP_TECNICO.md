@@ -65,7 +65,7 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
       mock simples de `dbutils.widgets` utilizável nos testes.
 - [x] Testes unitários pra lógica de `03_feature_engineering/03_feature_store_rfm.py` (scoring
       RFM) — começar por aqui, não pelos 20 notebooks de uma vez.
-- [ ] Testes unitários pra lógica de `03_feature_engineering/04_clustering_features_ml.py`
+- [x] Testes unitários pra lógica de `03_feature_engineering/04_clustering_features_ml.py`
       (validar que o silhouette score é calculado corretamente sobre um dataset sintético
       pequeno).
 

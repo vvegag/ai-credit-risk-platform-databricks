@@ -31,6 +31,43 @@ print(f"  ✅ {df_rfm_load.count():,} clientes carregados")
 
 # COMMAND ----------
 
+# DBTITLE 1,Funções de Clustering (puras, testáveis)
+def preparar_features_escaladas(df, feature_cols):
+    """Monta o vetor de features (`VectorAssembler`) e normaliza (`StandardScaler`).
+    Função pura pra ser testável isoladamente
+    (ver tests/test_clustering_features_ml.py, Fase C do roadmap técnico)."""
+    df_clean = df.fillna(0, subset=feature_cols)
+
+    assembler = VectorAssembler(inputCols=feature_cols, outputCol="features_raw")
+    df_assembled = assembler.transform(df_clean)
+
+    scaler = StandardScaler(
+        inputCol="features_raw",
+        outputCol="features_scaled",
+        withStd=True,
+        withMean=True
+    )
+    scaler_model = scaler.fit(df_assembled)
+    return scaler_model.transform(df_assembled)
+
+
+def treinar_kmeans_e_avaliar_silhouette(df_scaled, k=4, seed=42):
+    """Treina KMeans sobre `features_scaled` e calcula o Silhouette Score do resultado
+    (varia de -1 a 1; > 0.5 é considerado razoável, > 0.7 forte). Função pura pra ser
+    testável isoladamente (ver tests/test_clustering_features_ml.py, Fase C do roadmap
+    técnico)."""
+    kmeans = KMeans(k=k, seed=seed, featuresCol="features_scaled", predictionCol="cluster")
+    model = kmeans.fit(df_scaled)
+    df_clustered = model.transform(df_scaled)
+
+    evaluator = ClusteringEvaluator(
+        featuresCol="features_scaled", predictionCol="cluster", metricName="silhouette"
+    )
+    silhouette_score = evaluator.evaluate(df_clustered)
+    return model, df_clustered, silhouette_score
+
+# COMMAND ----------
+
 # DBTITLE 1,Preparar Vetores de Features
 feature_cols = [
     "total_faturado_90d",
@@ -41,43 +78,20 @@ feature_cols = [
     "rfm_score"
 ]
 
-df_clean = df_rfm_load.fillna(0, subset=feature_cols)
-
-assembler = VectorAssembler(inputCols=feature_cols, outputCol="features_raw")
-df_assembled = assembler.transform(df_clean)
-
-scaler = StandardScaler(
-    inputCol="features_raw",
-    outputCol="features_scaled",
-    withStd=True,
-    withMean=True
-)
-scaler_model = scaler.fit(df_assembled)
-df_scaled = scaler_model.transform(df_assembled)
+df_scaled = preparar_features_escaladas(df_rfm_load, feature_cols)
 
 print(f"  ✅ {len(feature_cols)} features normalizadas (StandardScaler): {', '.join(feature_cols)}")
 
 # COMMAND ----------
 
-# DBTITLE 1,Treinar K-Means
-kmeans = KMeans(k=4, seed=42, featuresCol="features_scaled", predictionCol="cluster")
-model = kmeans.fit(df_scaled)
-df_clustered = model.transform(df_scaled)
-
-print(f"  ✅ K-Means treinado (k=4) | WSSSE: {model.summary.trainingCost:.2f}")
-
-# COMMAND ----------
-
-# DBTITLE 1,Validar Qualidade do Clustering (Silhouette Score)
+# DBTITLE 1,Treinar K-Means e Validar Qualidade do Clustering (Silhouette Score)
 # k=4 foi escolhido pelos 4 perfis de negócio que fazem sentido pra ação de cobrança/CS
 # (Alto/Médio/Baixo Risco, Premium), não por busca de hiperparâmetro — o silhouette score
 # aqui não decide k, só documenta objetivamente quão bem separados os clusters resultantes
-# ficaram (varia de -1 a 1; > 0.5 é considerado razoável, > 0.7 forte). Métrica adicional,
-# não muda k nem o resultado do clustering acima.
-evaluator = ClusteringEvaluator(
-    featuresCol="features_scaled", predictionCol="cluster", metricName="silhouette"
-)
-silhouette_score = evaluator.evaluate(df_clustered)
+# ficaram. Métrica adicional, não muda k nem o resultado do clustering.
+model, df_clustered, silhouette_score = treinar_kmeans_e_avaliar_silhouette(df_scaled, k=4, seed=42)
+
+print(f"  ✅ K-Means treinado (k=4) | WSSSE: {model.summary.trainingCost:.2f}")
 print(f"  📊 Silhouette Score (k=4): {silhouette_score:.4f}")
 
 # COMMAND ----------

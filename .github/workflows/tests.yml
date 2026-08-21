@@ -26,7 +26,9 @@ jobs:
           java-version: "17"
 
       - name: Install test dependencies
-        run: pip install pytest pyspark
+        # numpy: pyspark.ml (usado pelos testes de clustering, Fase C do roadmap) depende
+        # dele em runtime mas não o declara como dependência do pacote pyspark.
+        run: pip install pytest pyspark numpy
 
       - name: Run tests
         run: pytest tests/ -v
