@@ -71,7 +71,7 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
 
 ## Fase D — Maturidade de infraestrutura (Asset Bundle)
 
-- [ ] Adicionar targets `staging`/`prod` em `databricks.yml` (mesmo Job, catálogo
+- [x] Adicionar targets `staging`/`prod` em `databricks.yml` (mesmo Job, catálogo
       parametrizado via `var.catalog` já existente — ex: `credit_risk_staging`,
       `credit_risk_prod`). Documentar o fluxo de promoção em `09_docs/GUIA_USO.md`.
 - [ ] Inference Tables no Model Serving endpoint
