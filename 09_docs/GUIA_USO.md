@@ -100,6 +100,58 @@ For a **Genie Space** (documented as future work — not built in this repo), po
 
 ---
 
+## 🚀 Deploy: dev → staging → prod
+
+`databricks.yml` define três targets do Asset Bundle — `dev` (default), `staging` e `prod`. Os
+três deployam **exatamente o mesmo Job/DAG** (`credit_risk_pipeline`, definido uma única vez em
+`resources.jobs`); o que muda entre eles é só a variável `catalog`, que cada target sobrescreve:
+
+| Target | Catálogo Unity Catalog | `mode` |
+|---|---|---|
+| `dev` | `credit_risk` | `development` (prefixa recursos com o usuário, pausa schedules) |
+| `staging` | `credit_risk_staging` | `production` |
+| `prod` | `credit_risk_prod` | `production` |
+
+Isso dá isolamento total de dados entre ambientes — cada catálogo tem seus próprios schemas
+`bronze`/`silver`/`gold`, sem risco de um deploy de teste escrever em cima de dados de produção.
+
+### Passo a passo de promoção
+
+```bash
+# 1. Validar em dev primeiro (catálogo credit_risk)
+databricks bundle deploy -t dev
+databricks bundle run credit_risk_pipeline -t dev
+
+# 2. Depois que o código já está mergeado em main (fluxo dev -> main deste repo),
+#    deployar o mesmo código pra staging (catálogo credit_risk_staging)
+databricks bundle deploy -t staging
+databricks bundle run credit_risk_pipeline -t staging
+
+# 3. Só depois de validar staging, promover pra prod (catálogo credit_risk_prod)
+databricks bundle deploy -t prod
+databricks bundle run credit_risk_pipeline -t prod
+```
+
+Não existe cópia/migração de dados entre catálogos — cada ambiente roda a ingestão sintética e o
+pipeline completo de forma independente (mesma lógica descrita em
+[🔀 Switching Databricks Accounts/Workspaces](#-switching-databricks-accountsworkspaces) acima,
+aplicada agora entre catálogos do mesmo workspace em vez de entre workspaces).
+
+### Limitações conhecidas (documentadas, não implementadas)
+
+- **`run_as` de service principal**: os targets `staging`/`prod` não definem `run_as` — isso
+  exige um privilégio de admin de workspace que não está garantido nas contas trial/acadêmicas
+  usadas para validar este projeto. Sem isso, `bundle deploy -t staging`/`-t prod` roda com a
+  identidade de quem executa o comando, não com uma identidade de serviço dedicada. Ver o item
+  correspondente `[blocked: ...]` na Fase D de `09_docs/ROADMAP_TECNICO.md`.
+- **`schedule`/`email_notifications` compartilhados**: como os três targets reusam a mesma
+  definição de Job em `resources.jobs`, o cron semanal (`MON 6h`, hoje `PAUSED`) e o alerta por
+  e-mail em caso de falha valem igualmente para dev/staging/prod. Ativar o schedule só em `prod`
+  (por exemplo) exigiria um override de recurso por target, não feito aqui pra manter a mudança
+  pequena — reative manualmente por ambiente via `pause_status` na UI do Job, se precisar.
+
+---
+
 ## 🔄 Retraining
 
 `05_mlops/01_mlops_pipeline.py` implements the retraining workflow: load current data, retrain,

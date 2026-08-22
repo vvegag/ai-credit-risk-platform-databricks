@@ -6,7 +6,12 @@
 #
 # Pré-requisitos: Databricks CLI configurado (`databricks configure`) e um workspace com
 # Unity Catalog habilitado. O parâmetro `catalog` é passado a cada notebook via widget
-# (default: "credit_risk") — troque em `variables.catalog.default` para usar outro nome.
+# (default: "credit_risk") — troque em `variables.catalog.default` para usar outro nome, ou via
+# `variables.catalog` de cada target (dev/staging/prod já fazem isso, ver abaixo).
+#
+# Fluxo de promoção dev -> staging -> prod: mesmo Job/DAG em todo lugar, só o catálogo Unity
+# Catalog muda por target (isolamento total de dados entre ambientes). Ver
+# 09_docs/GUIA_USO.md#-deploy-dev--staging--prod para o passo a passo completo.
 
 bundle:
   name: ai-credit-risk-platform
@@ -20,6 +25,20 @@ targets:
   dev:
     mode: development
     default: true
+
+  staging:
+    mode: production
+    variables:
+      catalog: credit_risk_staging
+    # `run_as` (service principal) fica de fora de propósito — é o item já marcado como
+    # `[blocked: requer privilégio de admin real no workspace]` na Fase D do roadmap. Até isso
+    # ser resolvido, `bundle deploy -t staging` roda com a identidade de quem executa o comando.
+
+  prod:
+    mode: production
+    variables:
+      catalog: credit_risk_prod
+    # Mesma ressalva de `run_as` do target staging acima.
 
 resources:
   jobs:
