@@ -74,7 +74,7 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
 - [x] Adicionar targets `staging`/`prod` em `databricks.yml` (mesmo Job, catálogo
       parametrizado via `var.catalog` já existente — ex: `credit_risk_staging`,
       `credit_risk_prod`). Documentar o fluxo de promoção em `09_docs/GUIA_USO.md`.
-- [ ] Inference Tables no Model Serving endpoint
+- [x] Inference Tables no Model Serving endpoint
       (`05_mlops/02_model_serving_endpoint.py`) — log automático de request/response.
 - [blocked: requer privilégio de admin real no workspace] `run_as` de service principal no
       Job — não implementar até haver uma conta com esse privilégio confirmado.

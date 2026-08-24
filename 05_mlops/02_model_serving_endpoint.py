@@ -17,6 +17,12 @@
 # MAGIC ## Custo
 # MAGIC Configurado com **scale-to-zero** (`workload_size="Small"`, `scale_to_zero_enabled=True`) —
 # MAGIC o endpoint desliga o compute quando não recebe tráfego, evitando custo ocioso.
+# MAGIC
+# MAGIC ## Inference Tables
+# MAGIC O endpoint é criado com `auto_capture_config` habilitado, logando automaticamente request e
+# MAGIC response de cada chamada em `credit_risk.gold.serving_requests_payload` (tabela Delta gerenciada
+# MAGIC pelo próprio Model Serving) — base para monitorar drift/qualidade em produção real, sem precisar
+# MAGIC de instrumentação manual.
 
 # COMMAND ----------
 
@@ -26,6 +32,7 @@ CATALOG = dbutils.widgets.get("catalog")
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import (
+    AutoCaptureConfigInput,
     EndpointCoreConfigInput,
     ServedEntityInput,
 )
@@ -35,12 +42,14 @@ MODEL_NAME = "credit_risk_classifier"
 MODEL_REGISTRY_NAME = f"{CATALOG}.gold.{MODEL_NAME}"
 ENDPOINT_NAME = f"{CATALOG}_classifier_endpoint"
 ALIAS = "Champion"
+INFERENCE_TABLE_PREFIX = "serving_requests"
 
 w = WorkspaceClient()
 
 print(f"✅ Configuração:")
 print(f"   - Modelo: {MODEL_REGISTRY_NAME}@{ALIAS}")
 print(f"   - Endpoint: {ENDPOINT_NAME}")
+print(f"   - Inference Table: {CATALOG}.gold.{INFERENCE_TABLE_PREFIX}_payload")
 
 # COMMAND ----------
 
@@ -65,12 +74,24 @@ except Exception as e:
 # DBTITLE 1,Criar ou Atualizar o Endpoint
 # Idempotente: cria se não existir, atualiza a versão servida se já existir (ex: quando um
 # novo Champion foi promovido desde a última sincronização).
+#
+# Inference Tables (`auto_capture_config`): loga automaticamente request/response de cada
+# chamada ao endpoint numa tabela Delta gerenciada (`{catalog}.gold.{prefix}_payload`) — é o
+# que permite monitorar drift/qualidade em produção real, complementando o batch scoring já
+# existente (`gold.model_predictions`). Nota: no update, catálogo/schema/prefix não podem ser
+# trocados enquanto a Inference Table já estiver habilitada (é preciso desabilitar antes).
 if CHAMPION_VERSION is not None:
     served_entity = ServedEntityInput(
         entity_name=MODEL_REGISTRY_NAME,
         entity_version=CHAMPION_VERSION,
         workload_size="Small",
         scale_to_zero_enabled=True,
+    )
+    auto_capture_config = AutoCaptureConfigInput(
+        catalog_name=CATALOG,
+        schema_name="gold",
+        table_name_prefix=INFERENCE_TABLE_PREFIX,
+        enabled=True,
     )
 
     try:
@@ -79,6 +100,7 @@ if CHAMPION_VERSION is not None:
         w.serving_endpoints.update_config_and_wait(
             name=ENDPOINT_NAME,
             served_entities=[served_entity],
+            auto_capture_config=auto_capture_config,
         )
         print(f"✅ Endpoint atualizado: {ENDPOINT_NAME} agora serve v{CHAMPION_VERSION}")
 
@@ -87,9 +109,13 @@ if CHAMPION_VERSION is not None:
         try:
             w.serving_endpoints.create_and_wait(
                 name=ENDPOINT_NAME,
-                config=EndpointCoreConfigInput(served_entities=[served_entity]),
+                config=EndpointCoreConfigInput(
+                    served_entities=[served_entity],
+                    auto_capture_config=auto_capture_config,
+                ),
             )
             print(f"✅ Endpoint criado: {ENDPOINT_NAME} servindo v{CHAMPION_VERSION}")
+            print(f"✅ Inference Table habilitada: {CATALOG}.gold.{INFERENCE_TABLE_PREFIX}_payload")
         except Exception as e:
             print(f"⚠️ Não foi possível criar o endpoint ({type(e).__name__}: {e})")
             print("↳ Costuma ser falta de permissão de admin/serving no workspace, ou quota de")
@@ -148,6 +174,5 @@ if CHAMPION_VERSION is not None:
 # MAGIC ```
 # MAGIC
 # MAGIC ## Próximos passos (fora de escopo deste notebook)
-# MAGIC - Inference Tables (log automático de request/response) para monitorar drift em produção real
 # MAGIC - Alertas automáticos se a latência p95 ou a taxa de erro do endpoint ultrapassar um threshold
 # MAGIC - Autenticação via Service Principal em vez de token pessoal, para chamadas de sistemas externos

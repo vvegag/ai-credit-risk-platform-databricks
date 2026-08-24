@@ -263,7 +263,9 @@ Exact metric values depend on the specific synthetic run — check the MLflow ex
 - [x] **Databricks AutoML** baseline + **LightGBM** comparison against the manual XGBoost classifier
       (`04_modeling/04_automl_lightgbm_comparacao.py`)
 - [x] **Real-time Model Serving** endpoint (`05_mlops/02_model_serving_endpoint.py`) — serves the
-      Champion alias directly, scale-to-zero, re-synced automatically after every retraining/promotion
+      Champion alias directly, scale-to-zero, re-synced automatically after every retraining/promotion,
+      with **Inference Tables** enabled (`auto_capture_config`) logging every request/response to
+      `gold.serving_requests_payload` for drift/quality monitoring
 - [x] **Collection prioritization ranking** combining classifier probability × regressor value-at-risk
       into a single Top-N table (`04_modeling/05_priorizacao_cobranca.py`)
 - [x] **A/B testing methodology** for collection strategies — two-proportion Z-test with confidence
@@ -274,7 +276,6 @@ Exact metric values depend on the specific synthetic run — check the MLflow ex
 ### 🚧 Documented as future work (not built in this repo)
 - [ ] **Genie Space** for self-service natural-language analytics
 - [ ] **Slack/email alerts** wired to the drift/alerts tables already produced by `05_mlops/01_mlops_pipeline.py`
-- [ ] Inference Tables (automatic request/response logging) on the Model Serving endpoint
 - [ ] CRM integration (Salesforce), Next Best Action, Lifetime Value (LTV) prediction
 
 ---
