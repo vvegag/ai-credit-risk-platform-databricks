@@ -81,7 +81,7 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
 
 ## Fase E — Governança/compliance mais fundo
 
-- [ ] Coluna de "Sensitivity"/classificação em `09_docs/DICIONARIO_DADOS.md` (marcar `cnpj`
+- [x] Coluna de "Sensitivity"/classificação em `09_docs/DICIONARIO_DADOS.md` (marcar `cnpj`
       como PII) — puramente documentação.
 - [blocked: requer privilégio de admin real no workspace] Masking de `cnpj` via Unity
       Catalog column mask — o desenho já está documentado em `09_docs/ARQUITETURA.md`, seção

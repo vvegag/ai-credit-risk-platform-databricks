@@ -5,17 +5,22 @@ Catalog: `credit_risk` (name parameterized via a `catalog` widget in every noteb
 ## 🥉 BRONZE (`credit_risk.bronze`)
 
 #### `clientes`
-| Column | Type | Description |
-|---|---|---|
-| id_cliente | int | Client ID (PK) |
-| nome | string | Company/client name |
-| cnpj | string | Tax ID |
-| setor | string | Industry sector |
-| porte | string | Small / Medium / Large |
-| receita_anual | long | Annual revenue |
-| score_risco | int | Initial synthetic risk score |
-| categoria_risco | string | Low / Medium / High (synthetic generation label) |
-| data_cadastro | string | Registration date |
+| Column | Type | Description | Sensitivity |
+|---|---|---|---|
+| id_cliente | int | Client ID (PK) | Internal |
+| nome | string | Company/client name | Internal |
+| cnpj | string | Tax ID | **PII** |
+| setor | string | Industry sector | Internal |
+| porte | string | Small / Medium / Large | Internal |
+| receita_anual | long | Annual revenue | Internal |
+| score_risco | int | Initial synthetic risk score | Internal |
+| categoria_risco | string | Low / Medium / High (synthetic generation label) | Internal |
+| data_cadastro | string | Registration date | Internal |
+
+`cnpj` is a Brazilian legal-entity tax ID — same sensitivity class as an individual's CPF.
+Stored as plaintext today, with no column-level masking or Unity Catalog classification tag
+enforced yet; see `ARQUITETURA.md` → "Sensitive data" for the documented (not yet implemented)
+design.
 
 #### `faturas` (partitioned by `ano_mes_emissao`)
 | Column | Type | Description |
@@ -45,7 +50,8 @@ Catalog: `credit_risk` (name parameterized via a `catalog` widget in every noteb
 ## 🥈 SILVER (`credit_risk.silver`)
 
 #### `clientes`
-Same columns as Bronze, deduplicated and trimmed.
+Same columns as Bronze, deduplicated and trimmed. Same sensitivity classification applies —
+`cnpj` remains **PII**.
 
 #### `faturas_enriquecidas` (partitioned by `ano_mes_emissao`)
 All `faturas` columns, with `valor` renamed to `valor_total`, plus:
