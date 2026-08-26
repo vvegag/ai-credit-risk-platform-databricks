@@ -171,6 +171,33 @@ this in practice and were fixed by dropping the cache call).
   data scientists (read bronze/silver, full gold), business users (read gold only)
 - **Auditability**: Delta Time Travel, MLflow experiment tracking, Unity Catalog lineage
 
+### Cost governance (cluster/warehouse sizing, budget)
+
+- **Compute model**: `databricks.yml` defines no `job_clusters` — every task in `credit_risk_pipeline`
+  runs on **Serverless Compute** (matches the README prerequisite: "Serverless Compute, or a cluster
+  with ML Runtime 14+"). This removes most of the traditional cluster-sizing decision (worker count,
+  instance type, autoscaling min/max): there's no fixed cluster to size, Databricks scales the
+  serverless compute plane per task automatically. Photon (see Performance section above) is a
+  cluster/warehouse-level setting, not something this repo's code controls.
+- **Schedule as the primary cost lever**: with serverless pay-per-use compute, the real budget control
+  is *how often* the Job runs, not cluster size. `credit_risk_pipeline`'s schedule
+  (`quartz_cron_expression: "0 0 6 ? * MON"`, weekly) ships with `pause_status: PAUSED` — it never
+  incurs scheduled spend until a human explicitly activates it after validating a first manual run.
+- **Blast-radius limits per task**: every task caps `timeout_seconds: 3600` and `max_retries: 1`
+  (`min_retry_interval_millis: 120000`), so a stuck or looping task burns at most ~1h of compute plus
+  one retry, not an unbounded runaway. `email_notifications.on_failure` alerts same-day on any task
+  failure, so a broken (and wastefully re-running) pipeline doesn't go unnoticed until the next
+  manual check.
+- **SQL Warehouse (dashboards, `08_dashboards/`)**: the Lakeview dashboards query Gold tables through
+  a SQL Warehouse, not a notebook cluster. Given this project's data volume (synthetic, low-hundreds-
+  of-MB Gold tables) and query pattern (simple aggregations, not concurrent BI load), the recommended
+  sizing is the smallest **Serverless SQL Warehouse** (2X-Small/X-Small) with a short auto-stop window
+  (e.g. 10 minutes) — there's no workload here that benefits from a larger warehouse.
+- **Budget note**: nothing in this repo reserves capacity ahead of time — Job tasks and the SQL
+  Warehouse are both pay-per-use serverless, so actual monthly cost tracks usage frequency, not a
+  fixed allocation. No standing capacity-planning exercise is needed beyond keeping the schedule
+  paused/manual until a real usage pattern (not just this portfolio demo) justifies enabling it.
+
 ### Sensitive data (known gap, documented design — not implemented)
 
 `bronze.clientes.cnpj` is stored as plaintext today (a Brazilian legal-entity ID, same

@@ -86,7 +86,7 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
 - [blocked: requer privilégio de admin real no workspace] Masking de `cnpj` via Unity
       Catalog column mask — o desenho já está documentado em `09_docs/ARQUITETURA.md`, seção
       "Sensitive data"; não implementar até ter workspace com privilégio confirmado.
-- [ ] Nota de governança de custo (dimensionamento de cluster/warehouse, orçamento) em
+- [x] Nota de governança de custo (dimensionamento de cluster/warehouse, orçamento) em
       `09_docs/ARQUITETURA.md`.
 - [ ] Lineage real: descrever passo a passo como gerar/ler o UC Lineage Graph pra
       `gold.features_ml` no workspace, substituindo a frase solta que existe hoje em
