@@ -88,7 +88,7 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
       "Sensitive data"; não implementar até ter workspace com privilégio confirmado.
 - [x] Nota de governança de custo (dimensionamento de cluster/warehouse, orçamento) em
       `09_docs/ARQUITETURA.md`.
-- [ ] Lineage real: descrever passo a passo como gerar/ler o UC Lineage Graph pra
+- [x] Lineage real: descrever passo a passo como gerar/ler o UC Lineage Graph pra
       `gold.features_ml` no workspace, substituindo a frase solta que existe hoje em
       `ARQUITETURA.md`.
 

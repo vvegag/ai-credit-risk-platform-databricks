@@ -169,7 +169,8 @@ this in practice and were fixed by dropping the cache call).
 - **Schemas**: `bronze`, `silver`, `gold`
 - **Permissions**: `01_setup/02_configurar_permissoes.py` — data engineers (full access),
   data scientists (read bronze/silver, full gold), business users (read gold only)
-- **Auditability**: Delta Time Travel, MLflow experiment tracking, Unity Catalog lineage
+- **Auditability**: Delta Time Travel, MLflow experiment tracking, Unity Catalog lineage (see
+  "Lineage" subsection below for how to actually generate/read it for `gold.features_ml`)
 
 ### Cost governance (cluster/warehouse sizing, budget)
 
@@ -197,6 +198,60 @@ this in practice and were fixed by dropping the cache call).
   Warehouse are both pay-per-use serverless, so actual monthly cost tracks usage frequency, not a
   fixed allocation. No standing capacity-planning exercise is needed beyond keeping the schedule
   paused/manual until a real usage pattern (not just this portfolio demo) justifies enabling it.
+
+### Lineage (UC Lineage Graph)
+
+Unity Catalog captures table-level (and column-level) lineage automatically from every Spark
+read/write it can observe — no extra instrumentation needed in this repo's notebooks. For
+`credit_risk.gold.features_ml`, the upstream chain that UC lineage will show is:
+
+```
+bronze.clientes ─┐
+                 ├─(01_transformacao_silver.py)─► silver.clientes ─┐
+bronze.faturas ──┼─(01_transformacao_silver.py)─► silver.faturas_enriquecidas ─┤
+                 │                                                 ├─(02_transformacao_gold.py)─► gold.features_agregadas
+bronze.pagamentos┘                                                 │
+                                                                    │
+bronze.faturas ─────────────────────────────────────(03_feature_store_rfm.py)─► gold.features_rfm
+                                                                                        │
+                                                                        (04_clustering_features_ml.py)
+                                                                                        ▼
+                                                                                gold.features_ml
+```
+
+**How to generate it**: nothing to run — lineage is captured the first time each notebook
+executes a read+write in the same job/session (i.e. after the first successful run of
+`02_ingestion/01_popular_dados_completos.py` → `03_feature_engineering/01_transformacao_silver.py`
+→ `02_transformacao_gold.py` → `03_feature_store_rfm.py` → `04_clustering_features_ml.py`, or
+after one run of the `credit_risk_pipeline` Job). Lineage accumulates incrementally with every
+subsequent run; there's no backfill needed and no separate "enable lineage" step beyond having
+Unity Catalog enabled on the metastore (already a prerequisite for this whole project).
+
+**How to read it** (either works, no admin privilege required — any user with `SELECT` on the
+table can view its lineage):
+
+1. **Catalog Explorer (UI)** — Databricks workspace → **Catalog** → navigate to
+   `credit_risk` → `gold` → `features_ml` → **Lineage** tab. Shows upstream tables
+   (`features_rfm`, `features_agregadas`, `silver.faturas_enriquecidas`, `silver.clientes`,
+   the three `bronze` tables) and downstream consumers (the notebooks/jobs in
+   `04_modeling/` that read `features_ml`, plus any registered models or dashboards built on
+   it). Click a node to expand further upstream/downstream, or switch to the **Columns** sub-tab
+   for column-level lineage (e.g. tracing `perfil_comportamental` back to the `KMeans` clustering
+   step in `04_clustering_features_ml.py`).
+2. **System tables (SQL, for programmatic/auditable queries)** — query
+   `system.access.table_lineage` directly, e.g.:
+   ```sql
+   SELECT source_table_full_name, target_table_full_name, source_type, entity_run_id, event_time
+   FROM system.access.table_lineage
+   WHERE target_table_full_name = 'credit_risk.gold.features_ml'
+   ORDER BY event_time DESC;
+   ```
+   (requires the `system` catalog to be enabled on the metastore, which is a one-time
+   metastore-admin action — if `system.access.table_lineage` isn't queryable, that's the gap to
+   close, not a lineage bug). `system.access.column_lineage` gives the column-level equivalent.
+3. **REST API** — `GET /api/2.0/lineage-tracking/table-lineage` with
+   `{"table_name": "credit_risk.gold.features_ml"}` returns the same upstream/downstream graph as
+   the UI, useful for scripting a lineage export/audit outside the workspace.
 
 ### Sensitive data (known gap, documented design — not implemented)
 
