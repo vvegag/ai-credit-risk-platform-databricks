@@ -9,11 +9,34 @@
 # COMMAND ----------
 
 from pyspark.sql.functions import *
+from pyspark.sql.types import *
 
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "credit_risk", "Nome do catálogo")
 CATALOG = dbutils.widgets.get("catalog")
+
+# Schemas explícitos (mesmas colunas/tipos dos CSVs em sample_data/csvs/) — evita inferSchema,
+# que faz o Auto Loader escanear os arquivos numa passada extra e pode inferir tipos errados
+# se um lote inicial não representar bem a variação real dos dados (ex.: id como double na
+# ausência de valores grandes o suficiente para forçar long).
+schema_clientes_csv = StructType([
+    StructField("id_cliente", IntegerType(), False),
+    StructField("nome", StringType(), False),
+    StructField("cnpj", StringType(), False),
+    StructField("setor", StringType(), False),
+    StructField("porte", StringType(), False),
+    StructField("receita_anual", LongType(), False)
+])
+
+schema_faturas_csv = StructType([
+    StructField("id_fatura", IntegerType(), False),
+    StructField("id_cliente", IntegerType(), False),
+    StructField("valor", DoubleType(), False),
+    StructField("data_emissao", StringType(), False),
+    StructField("data_vencimento", StringType(), False),
+    StructField("status", StringType(), False)
+])
 
 # Caminho dos CSVs derivado do próprio notebook (funciona em qualquer workspace/Repo/Git folder)
 notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
@@ -43,7 +66,7 @@ df_clientes_csv = (spark.readStream
     .option("cloudFiles.format", "csv")
     .option("cloudFiles.schemaLocation", checkpoint_clientes)
     .option("header", "true")
-    .option("inferSchema", "true")
+    .schema(schema_clientes_csv)
     .load(f"{csv_path}clientes_manuais.csv")
 )
 
@@ -87,7 +110,7 @@ df_faturas_csv = (spark.readStream
     .option("cloudFiles.format", "csv")
     .option("cloudFiles.schemaLocation", checkpoint_faturas)
     .option("header", "true")
-    .option("inferSchema", "true")
+    .schema(schema_faturas_csv)
     .load(f"{csv_path}faturas_manuais.csv")
 )
 

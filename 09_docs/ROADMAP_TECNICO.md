@@ -94,8 +94,14 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
 
 ## Fase F — Data quality como código
 
-- [ ] `StructType` explícito nos pontos de ingestão que hoje inferem schema (auditar
+- [x] `StructType` explícito nos pontos de ingestão que hoje inferem schema (auditar
       `02_ingestion/*.py` e `03_feature_engineering/*.py`, listar quais ainda inferem).
+      **Auditoria**: `01_popular_dados_completos.py` já usa `StructType` explícito nas 3
+      tabelas Bronze; `03_feature_engineering/*.py` só lê tabelas Delta já tipadas (sem
+      `spark.read`/`inferSchema`); único ponto real de inferência era
+      `02_ingestao_csv_manuais.py`, que usava `.option("inferSchema", "true")` no Auto Loader
+      para `clientes_manuais.csv` e `faturas_manuais.csv` — substituído por `.schema(...)`
+      explícito, mesmo padrão de `StructType` já usado em `01_popular_dados_completos.py`.
 - [ ] `ALTER TABLE ... ADD CONSTRAINT` (`NOT NULL`, `CHECK`) nas tabelas Gold mais críticas
       (`features_ml`, `model_predictions`) — hoje zero constraints declaradas.
 
