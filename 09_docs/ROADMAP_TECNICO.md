@@ -102,8 +102,12 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
       `02_ingestao_csv_manuais.py`, que usava `.option("inferSchema", "true")` no Auto Loader
       para `clientes_manuais.csv` e `faturas_manuais.csv` — substituído por `.schema(...)`
       explícito, mesmo padrão de `StructType` já usado em `01_popular_dados_completos.py`.
-- [ ] `ALTER TABLE ... ADD CONSTRAINT` (`NOT NULL`, `CHECK`) nas tabelas Gold mais críticas
+- [x] `ALTER TABLE ... ADD CONSTRAINT` (`NOT NULL`, `CHECK`) nas tabelas Gold mais críticas
       (`features_ml`, `model_predictions`) — hoje zero constraints declaradas.
+      Implementado em `01_setup/03_manutencao_delta.py`: `NOT NULL` em `id_cliente` +
+      colunas consumidas direto pelos modelos, `CHECK` nas faixas de valor já garantidas
+      implicitamente pela lógica de geração (cluster 0-3, rfm_score 1-5, probabilidade
+      [0,1], predição binária), com try/except idempotente igual ao resto do notebook.
 
 ---
 
