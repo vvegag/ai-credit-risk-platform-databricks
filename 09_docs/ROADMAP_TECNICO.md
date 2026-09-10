@@ -119,9 +119,11 @@ primeiro, decisões de produto do dono do projeto por último.
 - [x] Corrigir licença divergente em `10_rag_agent/README.md` (linha final dizia
       "Licença: Proprietário"; o repo inteiro é MIT — `LICENSE` e `README.md` raiz linha
       312-314 confirmam) — alinhar com MIT.
-- [ ] Remover workspace path + e-mail pessoal hardcoded em
-      `10_rag_agent/tests/test_rag_agent.py:4` (`/Workspace/Users/valdomirovega@hotmail.com/...`)
-      — usar variável de ambiente ou path relativo, sem PII no código-fonte.
+- [x] Remover workspace path + e-mail pessoal hardcoded. Achado na auditoria: além de
+      `10_rag_agent/tests/test_rag_agent.py:4`, o mesmo `sys.path.append(...)` com e-mail
+      hardcoded também estava em `10_rag_agent/deploy/model_serving.py:4` e
+      `10_rag_agent/example_usage.py:18`. Substituído pelo placeholder genérico
+      `<seu_usuario>` nos 3 arquivos, mesmo padrão já usado em `10_rag_agent/README.md:44`.
 - [ ] Testes leves (sem workspace Databricks real) pra `10_rag_agent/src/config.py`, seguindo
       o mesmo padrão de mock/SparkSession local já usado em `tests/conftest.py` (Fase C).
 - [ ] Incluir os testes de `10_rag_agent/tests/` que não dependem de workspace real no

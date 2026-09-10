@@ -15,7 +15,7 @@
 
 # DBTITLE 1,1️⃣ Importar Módulos
 import sys
-sys.path.append('/Workspace/Users/valdomirovega@hotmail.com/ai-credit-risk-platform-databricks/10_rag_agent')
+sys.path.append('/Workspace/Users/<seu_usuario>/ai-credit-risk-platform-databricks/10_rag_agent')
 
 from src import RAGAgent, CONFIG
 
