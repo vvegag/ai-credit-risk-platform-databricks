@@ -105,4 +105,5 @@ Este módulo faz parte do **AI Credit Risk Platform**:
 Valdomiro Vega García - Databricks
 
 ## 📝 Licença
-Proprietário
+MIT — este módulo é parte do AI Credit Risk Platform e segue a mesma licença do repositório
+raiz (ver [LICENSE](../LICENSE)).

@@ -109,10 +109,42 @@ Spark/Databricks. Testar a lógica de transformação de dados de verdade precis
       implicitamente pela lógica de geração (cluster 0-3, rfm_score 1-5, probabilidade
       [0,1], predição binária), com try/except idempotente igual ao resto do notebook.
 
+## Fase G — Achados de auditoria de repositório (10/09/2026)
+
+Levantamento cobrindo o que as Fases A-F não tocam: o submódulo `10_rag_agent/` (que tem
+README/testes/deploy próprios mas nunca apareceu neste roadmap), consistência de docs e
+hygiene geral do repo. Itens em ordem de segurança/impacto — mudanças pequenas e aditivas
+primeiro, decisões de produto do dono do projeto por último.
+
+- [x] Corrigir licença divergente em `10_rag_agent/README.md` (linha final dizia
+      "Licença: Proprietário"; o repo inteiro é MIT — `LICENSE` e `README.md` raiz linha
+      312-314 confirmam) — alinhar com MIT.
+- [ ] Remover workspace path + e-mail pessoal hardcoded em
+      `10_rag_agent/tests/test_rag_agent.py:4` (`/Workspace/Users/valdomirovega@hotmail.com/...`)
+      — usar variável de ambiente ou path relativo, sem PII no código-fonte.
+- [ ] Testes leves (sem workspace Databricks real) pra `10_rag_agent/src/config.py`, seguindo
+      o mesmo padrão de mock/SparkSession local já usado em `tests/conftest.py` (Fase C).
+- [ ] Incluir os testes de `10_rag_agent/tests/` que não dependem de workspace real no
+      `.github/workflows/tests.yml` (hoje só roda `pytest tests/`, ignora o submódulo).
+- [ ] Reconciliar pins de dependência entre `requirements.txt` (raiz) e
+      `10_rag_agent/requirements.txt` nos pacotes que se sobrepõem (`langchain`, `mlflow`,
+      `sentence-transformers`) — hoje um usa `==` fixo e o outro só `>=`.
+- [ ] Criar `CONTRIBUTING.md` na raiz, formalizando o fluxo de 5 passos já resumido no
+      `README.md` (fork/branch/commit/push/PR).
+- [ ] Remover linha comentada obsoleta em `.gitignore` (regra de exclusão de PDFs de notas
+      fiscais deixada comentada em vez de removida).
+- [ ] Formalizar o bloco "🚧 future work" do `README.md` raiz (Genie Space, alertas
+      Slack/e-mail, CRM/Next-Best-Action/LTV) como itens rastreáveis aqui, com decisão de
+      escopo/prioridade de cada um.
+- [ ] Corrigir e-mail de contato inconsistente no `README.md` raiz (`@hotmail.com` vs
+      `@gmail.com` da conta atual) — decisão do dono do projeto sobre qual é o oficial.
+
 ---
 
 ## Sequência recomendada
 
-A (feita) → B → C → F → D/E — as duas últimas dependem de privilégios de workspace que hoje
-não são garantidos numa conta trial/acadêmica; os itens `[blocked: ...]` ficam documentados
-como desenho, não implementados, até isso mudar.
+A (feita) → B → C → F → D/E → G — as duas do meio (D/E) dependem de privilégios de
+workspace que hoje não são garantidos numa conta trial/acadêmica; os itens
+`[blocked: ...]` ficam documentados como desenho, não implementados, até isso mudar. A
+Fase G foi adicionada a partir de uma auditoria de repositório e segue o mesmo processo de
+1 item por dia.
