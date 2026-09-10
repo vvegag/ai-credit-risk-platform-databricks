@@ -303,8 +303,7 @@ Contributions are welcome! Please:
 
 **Valdomiro Vega**
 
-- 📧 Email: valdomirovega@hotmail.com
-- 💼 GitHub: [@vvegag](https://github.com/vvegag)
+- 💼 GitHub: [@vvegag](https://github.com/vvegag) — open an issue or PR here
 - 🔗 LinkedIn: [valdomiro-vega](https://linkedin.com/in/valdomiro-vega)
 
 ---

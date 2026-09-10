@@ -136,8 +136,9 @@ primeiro, decisões de produto do dono do projeto por último.
 - [ ] Formalizar o bloco "🚧 future work" do `README.md` raiz (Genie Space, alertas
       Slack/e-mail, CRM/Next-Best-Action/LTV) como itens rastreáveis aqui, com decisão de
       escopo/prioridade de cada um.
-- [ ] Corrigir e-mail de contato inconsistente no `README.md` raiz (`@hotmail.com` vs
-      `@gmail.com` da conta atual) — decisão do dono do projeto sobre qual é o oficial.
+- [x] Corrigir e-mail de contato inconsistente no `README.md` raiz. **Decisão do dono do
+      projeto**: não expor e-mail pessoal em documento público — removida a linha de e-mail
+      da seção Contact, mantendo GitHub e LinkedIn como canais de contato.
 
 ---
 
