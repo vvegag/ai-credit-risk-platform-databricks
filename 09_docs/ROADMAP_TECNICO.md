@@ -124,8 +124,14 @@ primeiro, decisões de produto do dono do projeto por último.
       hardcoded também estava em `10_rag_agent/deploy/model_serving.py:4` e
       `10_rag_agent/example_usage.py:18`. Substituído pelo placeholder genérico
       `<seu_usuario>` nos 3 arquivos, mesmo padrão já usado em `10_rag_agent/README.md:44`.
-- [ ] Testes leves (sem workspace Databricks real) pra `10_rag_agent/src/config.py`, seguindo
+- [x] Testes leves (sem workspace Databricks real) pra `10_rag_agent/src/config.py`, seguindo
       o mesmo padrão de mock/SparkSession local já usado em `tests/conftest.py` (Fase C).
+      **Nota**: `config.py` não usa Spark/dbutils, então não há SparkSession pra mockar aqui;
+      o padrão reaproveitado foi o de `load_notebook_functions` (carregar o módulo isolado,
+      sem executar a cadeia pesada de imports) — necessário porque `10_rag_agent/src/__init__.py`
+      importa `RAGAgent`/`VectorSearch`/`EmbeddingModel`, que dependem de
+      `langchain_databricks`, `databricks-vectorsearch` e `sentence-transformers`. Testes em
+      `10_rag_agent/tests/test_config.py`.
 - [ ] Incluir os testes de `10_rag_agent/tests/` que não dependem de workspace real no
       `.github/workflows/tests.yml` (hoje só roda `pytest tests/`, ignora o submódulo).
 - [ ] Reconciliar pins de dependência entre `requirements.txt` (raiz) e
