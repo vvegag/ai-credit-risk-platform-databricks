@@ -132,8 +132,13 @@ primeiro, decisões de produto do dono do projeto por último.
       importa `RAGAgent`/`VectorSearch`/`EmbeddingModel`, que dependem de
       `langchain_databricks`, `databricks-vectorsearch` e `sentence-transformers`. Testes em
       `10_rag_agent/tests/test_config.py`.
-- [ ] Incluir os testes de `10_rag_agent/tests/` que não dependem de workspace real no
+- [x] Incluir os testes de `10_rag_agent/tests/` que não dependem de workspace real no
       `.github/workflows/tests.yml` (hoje só roda `pytest tests/`, ignora o submódulo).
+      **Auditoria**: só `test_config.py` não depende de workspace real; `test_rag_agent.py`
+      importa `VectorSearchClient`/`ChatDatabricks`/`SentenceTransformer` de verdade (precisa
+      de workspace Databricks configurado e baixa modelo real), então continua fora do CI.
+      Adicionado `10_rag_agent/tests/test_config.py` explicitamente ao comando `pytest` do
+      workflow, sem alterar dependências instaladas (o módulo só usa `dataclasses`/`os`).
 - [ ] Reconciliar pins de dependência entre `requirements.txt` (raiz) e
       `10_rag_agent/requirements.txt` nos pacotes que se sobrepõem (`langchain`, `mlflow`,
       `sentence-transformers`) — hoje um usa `==` fixo e o outro só `>=`.
