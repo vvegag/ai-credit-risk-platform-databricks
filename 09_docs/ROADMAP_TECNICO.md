@@ -139,9 +139,15 @@ primeiro, decisões de produto do dono do projeto por último.
       de workspace Databricks configurado e baixa modelo real), então continua fora do CI.
       Adicionado `10_rag_agent/tests/test_config.py` explicitamente ao comando `pytest` do
       workflow, sem alterar dependências instaladas (o módulo só usa `dataclasses`/`os`).
-- [ ] Reconciliar pins de dependência entre `requirements.txt` (raiz) e
+- [x] Reconciliar pins de dependência entre `requirements.txt` (raiz) e
       `10_rag_agent/requirements.txt` nos pacotes que se sobrepõem (`langchain`, `mlflow`,
       `sentence-transformers`) — hoje um usa `==` fixo e o outro só `>=`.
+      **Implementado**: pacotes sobrepostos sem pin no raiz (`sentence-transformers`,
+      `langchain`, `langchain-databricks`, `databricks-vectorsearch`, `pypdf`) agora usam o
+      mesmo piso de versão (`>=`) já declarado em `10_rag_agent/requirements.txt`. `mlflow`
+      continua fora do raiz (decisão já documentada: vem embutido no Databricks Runtime ML) —
+      adicionado comentário em `10_rag_agent/requirements.txt` explicando por que ele só é
+      pinado ali (testes do submódulo rodam fora do Runtime ML).
 - [ ] Criar `CONTRIBUTING.md` na raiz, formalizando o fluxo de 5 passos já resumido no
       `README.md` (fork/branch/commit/push/PR).
 - [ ] Remover linha comentada obsoleta em `.gitignore` (regra de exclusão de PDFs de notas

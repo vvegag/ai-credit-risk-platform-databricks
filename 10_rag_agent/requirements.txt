@@ -1,4 +1,8 @@
 # Core dependencies
+# sentence-transformers/langchain/langchain-databricks/databricks-vectorsearch/pypdf usam a
+# mesma versão mínima do requirements.txt raiz (reconciliado pra evitar divergência entre
+# os dois arquivos). mlflow só é pinado aqui porque os testes deste submódulo rodam fora do
+# Databricks Runtime ML (que já traz o MLflow embutido, por isso não é pinado no raiz).
 sentence-transformers>=2.2.0
 langchain>=0.1.0
 langchain-databricks>=0.1.0
