@@ -148,8 +148,10 @@ primeiro, decisões de produto do dono do projeto por último.
       continua fora do raiz (decisão já documentada: vem embutido no Databricks Runtime ML) —
       adicionado comentário em `10_rag_agent/requirements.txt` explicando por que ele só é
       pinado ali (testes do submódulo rodam fora do Runtime ML).
-- [ ] Criar `CONTRIBUTING.md` na raiz, formalizando o fluxo de 5 passos já resumido no
-      `README.md` (fork/branch/commit/push/PR).
+- [x] Criar `CONTRIBUTING.md` na raiz, formalizando o fluxo de 5 passos já resumido no
+      `README.md` (fork/branch/commit/push/PR). Também documenta convenções já existentes
+      (formato de notebook, regra PySpark-first, idioma código PT-BR/docs EN) e o comando de
+      teste local, pra centralizar num único ponto de entrada pra quem for contribuir.
 - [ ] Remover linha comentada obsoleta em `.gitignore` (regra de exclusão de PDFs de notas
       fiscais deixada comentada em vez de removida).
 - [ ] Formalizar o bloco "🚧 future work" do `README.md` raiz (Genie Space, alertas
