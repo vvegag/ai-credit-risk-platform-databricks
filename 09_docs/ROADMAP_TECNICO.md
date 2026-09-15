@@ -152,7 +152,7 @@ primeiro, decisões de produto do dono do projeto por último.
       `README.md` (fork/branch/commit/push/PR). Também documenta convenções já existentes
       (formato de notebook, regra PySpark-first, idioma código PT-BR/docs EN) e o comando de
       teste local, pra centralizar num único ponto de entrada pra quem for contribuir.
-- [ ] Remover linha comentada obsoleta em `.gitignore` (regra de exclusão de PDFs de notas
+- [x] Remover linha comentada obsoleta em `.gitignore` (regra de exclusão de PDFs de notas
       fiscais deixada comentada em vez de removida).
 - [ ] Formalizar o bloco "🚧 future work" do `README.md` raiz (Genie Space, alertas
       Slack/e-mail, CRM/Next-Best-Action/LTV) como itens rastreáveis aqui, com decisão de
